@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Reading Assistant – Three-Column Layout</title>
+
+<!-- PDF-JS -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+<!-- Baseline reset -->
+<link rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/normalize/8.0.1/normalize.min.css" />
+
+<style>
+/* ——— GLOBAL ——— */
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;
+  background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);
+  min-height:100vh;overflow:hidden
+}
+.header{
+  background:rgba(255,255,255,.95);
+  padding:15px 30px;
+  backdrop-filter:blur(10px);
+  box-shadow:0 2px 10px rgba(0,0,0,.1)
+}
+.header h1{
+  text-align:center;font-size:1.8em;color:#333;
+  background:linear-gradient(45deg,#667eea,#764ba2);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;margin-bottom:10px
+}
+.upload-section{display:flex;justify-content:center;align-items:center;gap:15px}
+.file-input-container{position:relative;display:inline-block}
+.file-input{position:absolute;opacity:0;width:100%;height:100%;cursor:pointer}
+.file-button{
+  background:linear-gradient(45deg,#667eea,#764ba2);
+  color:#fff;padding:10px 20px;border-radius:8px;border:none;
+  cursor:pointer;font-size:14px;transition:.3s
+}
+.file-button:hover{transform:translateY(-2px);box-shadow:0 5px 15px rgba(102,126,234,.4)}
+.main-container{
+  display:grid;grid-template-columns:1fr 1fr 1fr;
+  height:calc(100vh - 120px);gap:1px;background:#ccc
+}
+.column{background:#fff;overflow:hidden;display:flex;flex-direction:column}
+.column-header{
+  background:linear-gradient(45deg,#667eea,#764ba2);
+  color:#fff;padding:15px;font-weight:600;font-size:16px;text-align:center
+}
+.column-content{flex:1;overflow:auto;padding:15px}
+
+/* ——— PDF viewer (unchanged) ——— */
+.pdf-viewer{display:flex;flex-direction:column;align-items:center;gap:10px}
+.pdf-controls{
+  display:flex;gap:10px;align-items:center;background:#f8f9fa;
+  padding:10px;border-radius:8px;width:100%;justify-content:center
+}
+.pdf-controls button{
+  background:#667eea;color:#fff;border:none;padding:8px 12px;
+  border-radius:5px;cursor:pointer;font-size:12px
+}
+.pdf-controls button:hover{background:#5a6fd8}
+.pdf-controls button:disabled{background:#ccc;cursor:not-allowed}
+#pdfCanvas{border:1px solid #ddd;border-radius:8px;max-width:100%;
+           box-shadow:0 4px 8px rgba(0,0,0,.08)}
+
+/* ——— MIDDLE column: improved extracted text ——— */
+.text-content{
+  background:#fcfcfe;border:1px solid #e5e7ff;border-radius:12px;
+  padding:25px 30px;line-height:1.9;font-size:16px;color:#333;
+  max-width:42rem;margin:0 auto;overflow-y:auto;user-select:text;cursor:text
+}
+.text-content::-webkit-scrollbar{width:8px}
+.text-content::-webkit-scrollbar-track{background:#f1f1f1;border-radius:10px}
+.text-content::-webkit-scrollbar-thumb{background:#667eea;border-radius:10px}
+
+/* Each logical PDF page gets a soft “card” */
+.page{
+  background:#fff;border:1px solid #f0f0f0;border-radius:10px;
+  box-shadow:0 1px 4px rgba(0,0,0,.06);
+  padding:20px 24px;margin-bottom:40px;position:relative
+}
+.page::before{
+  content:attr(data-page);position:absolute;top:-18px;right:8px;
+  font-size:12px;color:#777;background:#fff;padding:0 6px
+}
+
+/* Highlight when user selects */
+.highlight{
+  background:linear-gradient(120deg,#f093fb 0%,#f5576c 100%);
+  color:#fff;padding:2px 4px;border-radius:3px;cursor:pointer;transition:.3s
+}
+.highlight:hover{transform:scale(1.02)}
+
+/* ——— RIGHT column (exactly as before) ——— */
+.right-column-content{display:flex;flex-direction:column;height:100%;gap:15px}
+.selected-text-section{
+  background:#f8f9fa;border-radius:10px;padding:15px;
+  min-height:120px;border-left:4px solid #667eea
+}
+.selected-text-title{font-weight:600;color:#333;margin-bottom:10px;font-size:14px}
+.selected-text{
+  font-style:italic;color:#555;line-height:1.6;min-height:60px;
+  padding:10px;background:#fff;border-radius:5px;border:1px solid #e0e0e0
+}
+.voice-section{background:#f8f9fa;border-radius:10px;padding:15px}
+.voice-title{font-weight:600;color:#333;margin-bottom:15px;font-size:14px}
+.voice-controls{display:flex;gap:8px;margin-bottom:15px;flex-wrap:wrap}
+.control-btn{
+  background:linear-gradient(45deg,#667eea,#764ba2);
+  color:#fff;border:none;padding:8px 12px;border-radius:20px;
+  cursor:pointer;font-size:12px;transition:.3s;flex:1;min-width:70px
+}
+.control-btn:hover{transform:scale(1.05);box-shadow:0 3px 10px rgba(102,126,234,.4)}
+.control-btn:disabled{opacity:.6;cursor:not-allowed;transform:none}
+.voice-settings{display:flex;flex-direction:column;gap:10px}
+.voice-setting{display:flex;justify-content:space-between;align-items:center}
+.voice-setting label{font-size:12px;color:#666;font-weight:500;flex:1}
+.voice-setting select,.voice-setting input{
+  padding:6px;border:1px solid #e0e0e0;border-radius:4px;background:#fff;
+  font-size:12px;flex:2
+}
+.voice-setting input[type=range]{flex:1.5}
+.speed-value,.pitch-value{font-size:11px;color:#666;margin-left:5px;min-width:35px}
+
+.analysis-section{
+  flex:1;background:#f8f9fa;border-radius:10px;padding:15px;
+  display:flex;flex-direction:column
+}
+.analysis-title{font-weight:600;color:#333;margin-bottom:15px;font-size:14px}
+.api-section{margin-bottom:15px}
+.api-tabs{display:flex;gap:5px;margin-bottom:10px}
+.api-tab{
+  background:#e9ecef;border:none;padding:8px 12px;border-radius:5px;
+  cursor:pointer;font-size:12px;transition:.3s
+}
+.api-tab.active{background:linear-gradient(45deg,#667eea,#764ba2);color:#fff}
+.api-input{width:100%;padding:8px;border:1px solid #e0e0e0;
+           border-radius:5px;font-size:12px;margin-bottom:10px}
+.analyze-btn{
+  background:linear-gradient(45deg,#11998e,#38ef7d);color:#fff;border:none;
+  padding:10px 15px;border-radius:6px;cursor:pointer;font-size:13px;width:100%;
+  transition:.3s;margin-bottom:15px
+}
+.analyze-btn:hover{transform:translateY(-1px);box-shadow:0 3px 10px rgba(17,153,142,.4)}
+.analyze-btn:disabled{opacity:.6;cursor:not-allowed;transform:none}
+.analysis-content{
+  flex:1;background:#fff;padding:15px;border-radius:8px;
+  border:1px solid #e0e0e0;font-size:13px;line-height:1.6;overflow-y:auto;color:#555
+}
+.loading{
+  display:inline-block;width:12px;height:12px;border:2px solid #f3f3f3;
+  border-top:2px solid #667eea;border-radius:50%;animation:spin 1s linear infinite;
+  margin-right:8px
+}
+@keyframes spin{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}
+.error{
+  color:#e74c3c;background:#ffeaea;padding:8px;border-radius:5px;margin-bottom:10px;
+  border-left:3px solid #e74c3c;font-size:12px
+}
+.success{
+  color:#27ae60;background:#eafaf1;padding:8px;border-radius:5px;margin-bottom:10px;
+  border-left:3px solid #27ae60;font-size:12px
+}
+
+/* nice little boxes for stats / summary */
+.analysis-result{
+  background:#f8f9fa;border-radius:10px;padding:15px;margin-bottom:15px;
+  border-left:4px solid #667eea
+}
+.analysis-section-title{
+  font-weight:600;color:#333;margin-bottom:10px;font-size:14px;
+  display:flex;align-items:center;gap:8px
+}
+.summary-box{
+  background:#fff;padding:12px;border-radius:8px;
+  border:1px solid #e0e0e0;margin-bottom:12px
+}
+.persian-text{
+  font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;
+  direction:rtl;text-align:right;background:#f0f7ff;
+  padding:12px;border-radius:8px;border:1px solid #b3d9ff;margin-bottom:12px
+}
+.translation-note{font-size:11px;color:#666;font-style:italic;margin-top:5px}
+.analysis-stats{display:flex;gap:15px;margin-top:10px;flex-wrap:wrap}
+.stat-item{
+  background:#e8f4f8;padding:6px 10px;border-radius:15px;font-size:11px;
+  color:#2c5282
+}
+
+/* ——— Responsiveness ——— */
+@media(max-width:1200px){
+  .main-container{grid-template-columns:1fr 1fr}.pdf-column{display:none}
+}
+@media(max-width:768px){
+  .main-container{grid-template-columns:1fr;height:auto}
+  .column{min-height:400px}
+}
+</style>
+</head>
+
+<body>
+<!-- ——— HEADER ——— -->
+<div class="header">
+  <h1>🤖 AI Reading Assistant – Three Columns</h1>
+  <div class="upload-section">
+    <div class="file-input-container">
+      <input type="file" id="fileInput" class="file-input" accept=".pdf,.txt,.docx">
+      <button class="file-button">📁 Choose PDF / Document</button>
+    </div>
+    <span id="fileName" style="color:#666;margin-left:10px">No file selected</span>
+  </div>
+</div>
+
+<!-- ——— GRID ——— -->
+<div class="main-container">
+
+  <!-- LEFT – PDF -->
+  <div class="column pdf-column">
+    <div class="column-header">📄 PDF Viewer</div>
+    <div class="column-content">
+      <div class="pdf-viewer">
+        <div class="pdf-controls">
+          <button id="prevPage">⬅️ Prev</button>
+          <span id="pageInfo">Page 0 of 0</span>
+          <button id="nextPage">➡️ Next</button>
+          <button id="zoomOut">🔍-</button>
+          <span id="zoomLevel">100%</span>
+          <button id="zoomIn">🔍+</button>
+        </div>
+        <canvas id="pdfCanvas"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- MIDDLE – EXTRACTED TEXT -->
+  <div class="column">
+    <div class="column-header">📖 Extracted Text</div>
+    <div class="column-content">
+      <div id="textContent" class="text-content">
+        Upload a file to see its contents here…
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT – VOICE & ANALYSIS (restored) -->
+  <div class="column">
+    <div class="column-header">🎯 Analysis & Voice</div>
+    <div class="column-content">
+      <div class="right-column-content">
+
+        <!-- Selected text -->
+        <div class="selected-text-section">
+          <div class="selected-text-title">📝 Selected Text</div>
+          <div id="selectedText" class="selected-text">
+            Select text from the middle column to see it here…
+          </div>
+        </div>
+
+        <!-- Voice -->
+        <div class="voice-section">
+          <div class="voice-title">🔊 Voice Controls</div>
+          <div class="voice-controls">
+            <button id="playBtn"  class="control-btn">▶️ Play</button>
+            <button id="pauseBtn" class="control-btn" disabled>⏸️ Pause</button>
+            <button id="stopBtn"  class="control-btn" disabled>⏹️ Stop</button>
+          </div>
+
+          <div class="voice-settings">
+            <div class="voice-setting">
+              <label>Voice:</label>
+              <select id="voiceSelect"><option value="">Default</option></select>
+            </div>
+            <div class="voice-setting">
+              <label>Speed:</label>
+              <input type="range" id="speedRange" min="0.5" max="2" step="0.1" value="1">
+              <span id="speedValue" class="speed-value">1.0x</span>
+            </div>
+            <div class="voice-setting">
+              <label>Pitch:</label>
+              <input type="range" id="pitchRange" min="0" max="2" step="0.1" value="1">
+              <span id="pitchValue" class="pitch-value">1.0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Analysis -->
+        <div class="analysis-section">
+          <div class="analysis-title">🧠 AI Text Analysis</div>
+
+          <div class="api-section">
+            <div class="api-tabs">
+              <button class="api-tab active" data-api="huggingface">🤗 Hugging Face</button>
+              <button class="api-tab" data-api="openai">🤖 OpenAI</button>
+            </div>
+            <input type="text" id="apiKey" class="api-input"
+                   placeholder="Enter your Hugging Face API Token">
+            <button id="analyzeBtn" class="analyze-btn">🔍 Analyze Selected Text</button>
+          </div>
+
+          <div id="analysisContent" class="analysis-content">
+            <strong>📚 Welcome!</strong><br><br>
+            Select some text, pick an API (or run local), and click analyze.
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</div><!-- /main-container -->
+
+<!-- ——— SCRIPT ——— -->
+<script>
+/* -------- State -------- */
+let selectedTextContent = '',
+    bookContent         = '',
+    currentUtterance    = null,
+    pdfDoc              = null,
+    pageNum             = 1,
+    pageRendering       = false,
+    pageNumPending      = null,
+    scale               = 1.0,
+    currentApiProvider  = 'huggingface';
+
+/* Helpers */
+const err = m=>{alert('❌ '+m);console.error('[AI-Reader] '+m)};
+const ok  = m=>{console.log('[AI-Reader] '+m)};
+
+/* pdf.js worker */
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+/* -------- File upload -------- */
+document.getElementById('fileInput').addEventListener('change',e=>{
+  const file=e.target.files[0]; if(!file)return;
+  document.getElementById('fileName').textContent=file.name;
+  if(file.type.includes('pdf')) loadPDF(file); else readTextFile(file);
+});
+
+/* -------- API-tab switching -------- */
+document.querySelectorAll('.api-tab').forEach(tab=>{
+  tab.addEventListener('click',function(){
+    document.querySelectorAll('.api-tab').forEach(t=>t.classList.remove('active'));
+    this.classList.add('active');
+    currentApiProvider=this.dataset.api;
+    document.getElementById('apiKey').placeholder =
+      currentApiProvider==='huggingface'
+        ? 'Enter your Hugging Face API Token'
+        : 'Enter your OpenAI API Key';
+  });
+});
+
+/* ================= PDF logic ================= */
+async function loadPDF(file){
+  try{
+    const buf=await file.arrayBuffer();
+    pdfDoc=await pdfjsLib.getDocument({data:buf}).promise;
+    document.getElementById('pageInfo').textContent=`Page 1 of ${pdfDoc.numPages}`;
+    renderPage(1);
+    extractTextFromPDF();
+    ok('PDF loaded');
+  }catch(e){err('Failed to load PDF: '+e.message);}
+}
+
+async function renderPage(num){
+  pageRendering=true;
+  const page=await pdfDoc.getPage(num);
+  const canvas=document.getElementById('pdfCanvas');
+  const ctx=canvas.getContext('2d');
+  const viewport=page.getViewport({scale});
+  canvas.height=viewport.height;
+  canvas.width =viewport.width;
+  await page.render({canvasContext:ctx,viewport}).promise;
+  pageRendering=false;
+  if(pageNumPending!==null){renderPage(pageNumPending);pageNumPending=null}
+  document.getElementById('pageInfo').textContent=`Page ${num} of ${pdfDoc.numPages}`;
+  pageNum=num;
+}
+function queueRenderPage(n){pageRendering?pageNumPending=n:renderPage(n)}
+
+/* Nav & zoom */
+document.getElementById('prevPage').onclick=()=>{if(pageNum>1)queueRenderPage(--pageNum)};
+document.getElementById('nextPage').onclick=()=>{if(pageNum<pdfDoc.numPages)queueRenderPage(++pageNum)};
+document.getElementById('zoomIn').onclick =()=>{scale+=.2;document.getElementById('zoomLevel').textContent=Math.round(scale*100)+'%';queueRenderPage(pageNum)};
+document.getElementById('zoomOut').onclick=()=>{if(scale>.4){scale-=.2;document.getElementById('zoomLevel').textContent=Math.round(scale*100)+'%';queueRenderPage(pageNum)}};
+
+/* ---- NEW: page-aware extraction ---- */
+async function extractTextFromPDF(){
+  let raw='', blocks=[];
+  for(let i=1;i<=pdfDoc.numPages;i++){
+    const page=await pdfDoc.getPage(i);
+    const tc=await page.getTextContent();
+    const text=tc.items.map(t=>t.str).join(' ');
+    raw+=text+'\n\n';
+    blocks.push(`<div class="page" data-page="Page ${i}">${text.replace(/\n/g,' ').replace(/\s+/g,' ')}</div>`);
+  }
+  bookContent=raw;
+  displayText(blocks.join(''));
+}
+
+/* -------- Plain-text files -------- */
+function readTextFile(file){
+  const r=new FileReader();
+  r.onload=e=>{
+    const txt=e.target.result;
+    bookContent=txt;
+    const html=`<div class="page" data-page="Text">${txt
+                  .replace(/\n\n+/g,'</div><div class="page" data-page="·">')
+                  .replace(/\n/g,'<br>')}</div>`;
+    displayText(html);
+  };
+  r.readAsText(file);
+}
+
+/* Show text */
+function displayText(html){
+  const el=document.getElementById('textContent');
+  el.innerHTML=html;
+  enableTextSelection();
+}
+
+/* -------- Highlight + capture -------- */
+function enableTextSelection(){
+  const el=document.getElementById('textContent');
+  el.onmouseup=()=>{
+    const sel=window.getSelection().toString().trim();
+    if(!sel)return;
+    selectedTextContent=sel;
+    document.getElementById('selectedText').textContent='"'+sel+'"';
+    /* simple highlight */
+    const range=window.getSelection().rangeCount?window.getSelection().getRangeAt(0):null;
+    if(range){
+      const span=document.createElement('span'); span.className='highlight';
+      try{range.surroundContents(span);}catch(e){/* overlapping nodes – ignore */ }
+    }
+  };
+}
+
+/* ================= Speech synthesis ================= */
+function loadVoices(){
+  const vs=speechSynthesis.getVoices();
+  const sel=document.getElementById('voiceSelect');
+  sel.innerHTML='<option value="">Default</option>';
+  vs.forEach((v,i)=>{
+    const o=document.createElement('option');o.value=i;o.textContent=`${v.name} (${v.lang})`;
+    sel.appendChild(o);
+  });
+}
+speechSynthesis.onvoiceschanged=loadVoices; loadVoices();
+
+document.getElementById('speedRange').oninput=e=>document.getElementById('speedValue').textContent=e.target.value+'x';
+document.getElementById('pitchRange').oninput=e=>document.getElementById('pitchValue').textContent=e.target.value;
+
+document.getElementById('playBtn').onclick =()=>{const t=selectedTextContent||bookContent; if(t)playText(t)};
+document.getElementById('pauseBtn').onclick=()=>speechSynthesis.pause();
+document.getElementById('stopBtn').onclick =()=>{speechSynthesis.cancel();updateVoiceCtrls(false);};
+
+function playText(t){
+  speechSynthesis.cancel();
+  currentUtterance=new SpeechSynthesisUtterance(t);
+  const vsel=document.getElementById('voiceSelect').value;
+  const vs=speechSynthesis.getVoices();
+  if(vsel)currentUtterance.voice=vs[vsel];
+  currentUtterance.rate=parseFloat(document.getElementById('speedRange').value);
+  currentUtterance.pitch=parseFloat(document.getElementById('pitchRange').value);
+  currentUtterance.onstart=currentUtterance.onresume=()=>updateVoiceCtrls(true);
+  currentUtterance.onend=currentUtterance.onerror =()=>updateVoiceCtrls(false);
+  speechSynthesis.speak(currentUtterance);
+}
+function updateVoiceCtrls(playing){
+  document.getElementById('playBtn').disabled=playing;
+  document.getElementById('pauseBtn').disabled=!playing;
+  document.getElementById('stopBtn').disabled=!playing;
+}
+
+/* ================= Analysis ================= */
+document.getElementById('analyzeBtn').onclick=()=>{
+  if(!selectedTextContent){err('Please select some text first');return;}
+  const key=document.getElementById('apiKey').value.trim();
+  if(key){
+    currentApiProvider==='huggingface'
+      ? analyzeWithHF(selectedTextContent,key)
+      : analyzeWithOpenAI(selectedTextContent,key);
+  }else analyzeLocally(selectedTextContent);
+};
+
+/* ---- local quick stats ---- */
+function analyzeLocally(text){
+  const out=document.getElementById('analysisContent');
+  const words=text.split(' ').filter(w=>w).length;
+  const chars=text.length;
+  const sentences=text.split(/[.!?]+/).filter(s=>s.trim()).length;
+  out.innerHTML=
+  `<div class="success">✅ Local Analysis Complete</div>
+   <div class="analysis-result">
+     <div class="analysis-section-title">📊 Text Statistics</div>
+     <div class="analysis-stats">
+       <div class="stat-item">📝 ${words} words</div>
+       <div class="stat-item">🔤 ${chars} characters</div>
+       <div class="stat-item">📄 ${sentences} sentences</div>
+     </div>
+   </div>
+   <div class="summary-box">
+     <em>💡 Add an API key for AI-powered summarization & Persian translation!</em>
+   </div>`;
+}
+
+/* ---- Hugging Face summarise + translate ---- */
+async function analyzeWithHF(text,key){
+  const btn=document.getElementById('analyzeBtn');
+  const out=document.getElementById('analysisContent');
+  btn.disabled=true;btn.innerHTML='<span class="loading"></span>Analyzing & Translating…';
+  try{
+    /* summary */
+    const sumRes=await fetch('https://api-inference.huggingface.co/models/facebook/bart-large-cnn',{
+      method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},
+      body:JSON.stringify({inputs:text,parameters:{max_length:120,min_length:40}})
+    });
+    if(!sumRes.ok)throw new Error('Summary API error '+sumRes.status);
+    const sumData=await sumRes.json();
+    const summary=sumData[0]?.summary_text||'No summary';
+    /* translate */
+    btn.innerHTML='<span class="loading"></span>Translating to Persian…';
+    const trRes=await fetch('https://api-inference.huggingface.co/models/Helsinki-NLP/opus-mt-en-fa',{
+      method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},
+      body:JSON.stringify({inputs:summary})
+    });
+    let persian='Translation failed';
+    if(trRes.ok){const trData=await trRes.json();persian=trData[0]?.translation_text||persian;}
+    /* stats */
+    const words=text.split(' ').filter(w=>w).length;
+    const chars=text.length;
+    const sentences=text.split(/[.!?]+/).filter(s=>s.trim()).length;
+    const avg=Math.round(words/sentences);
+    out.innerHTML=
+    `<div class="success">🤗 Hugging Face Analysis Complete</div>
+     <div class="analysis-result">
+       <div class="analysis-section-title">📊 Text Statistics</div>
+       <div class="analysis-stats">
+         <div class="stat-item">📝 ${words} words</div>
+         <div class="stat-item">📄 ${sentences} sentences</div>
+         <div class="stat-item">📈 ${avg} avg words/sentence</div>
+         <div class="stat-item">🔤 ${chars} characters</div>
+       </div>
+     </div>
+     <div class="analysis-result">
+       <div class="analysis-section-title">🔍 AI Summary (English)</div>
+       <div class="summary-box"><strong>Key Points:</strong><br>${summary}</div>
+     </div>
+     <div class="analysis-result">
+       <div class="analysis-section-title">🇮🇷 Persian Translation</div>
+       <div class="persian-text">${persian}</div>
+       <div class="translation-note">* Translated using Helsinki-NLP model</div>
+     </div>`;
+  }catch(e){
+    out.innerHTML=`<div class="error">❌ Analysis Error</div><p>${e.message}</p>`;
+  }finally{
+    btn.disabled=false;btn.textContent='🔍 Analyze Selected Text';
+  }
+}
+
+/* ---- OpenAI summarise + translate ---- */
+async function analyzeWithOpenAI(text,key){
+  const btn=document.getElementById('analyzeBtn');
+  const out=document.getElementById('analysisContent');
+  btn.disabled=true;btn.innerHTML='<span class="loading"></span>Analyzing with OpenAI…';
+  try{
+    /* summary */
+    const sumRes=await fetch('https://api.openai.com/v1/chat/completions',{
+      method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'gpt-3.5-turbo',
+        messages:[
+          {role:'system',content:'Provide a concise (2-3 sentence) summary of the user text.'},
+          {role:'user',content:`Please summarise:\n\n${text}`}
+        ],
+        max_tokens:150,temperature:0.3
+      })
+    });
+    if(!sumRes.ok){const d=await sumRes.json();throw new Error(d.error?.message||'OpenAI error')}
+    const sumData=await sumRes.json();
+    const summary=sumData.choices[0].message.content||'No summary';
+    /* translate */
+    btn.innerHTML='<span class="loading"></span>Translating to Persian…';
+    const trRes=await fetch('https://api.openai.com/v1/chat/completions',{
+      method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'gpt-3.5-turbo',
+        messages:[
+          {role:'system',content:'Translate the text to Persian.'},
+          {role:'user',content:summary}
+        ],
+        max_tokens:200,temperature:0.1
+      })
+    });
+    let persian='Translation failed';
+    if(trRes.ok){const trData=await trRes.json();persian=trData.choices[0].message.content||persian;}
+    /* stats + cost (rough) */
+    const words=text.split(' ').filter(w=>w).length;
+    const sentences=text.split(/[.!?]+/).filter(s=>s.trim()).length;
+    const avg=Math.round(words/sentences);
+    const estTokens=Math.ceil((text.length+summary.length)/4);
+    const estCost=(estTokens*0.000002).toFixed(6);
+    out.innerHTML=
+    `<div class="success">🤖 OpenAI Analysis Complete</div>
+     <div class="analysis-result">
+       <div class="analysis-section-title">📊 Text Statistics</div>
+       <div class="analysis-stats">
+         <div class="stat-item">📝 ${words} words</div>
+         <div class="stat-item">📄 ${sentences} sentences</div>
+         <div class="stat-item">📈 ${avg} avg words/sentence</div>
+         <div class="stat-item">💰 ~${estCost} USD</div>
+       </div>
+     </div>
+     <div class="analysis-result">
+       <div class="analysis-section-title">🔍 AI Summary (English)</div>
+       <div class="summary-box"><strong>AI Analysis:</strong><br>${summary}</div>
+     </div>
+     <div class="analysis-result">
+       <div class="analysis-section-title">🇮🇷 Persian Translation</div>
+       <div class="persian-text">${persian}</div>
+       <div class="translation-note">* Translated using OpenAI GPT-3.5-turbo</div>
+     </div>`;
+  }catch(e){
+    out.innerHTML=`<div class="error">❌ OpenAI Error</div><p>${e.message}</p>`;
+  }finally{
+    btn.disabled=false;btn.textContent='🔍 Analyze Selected Text';
+  }
+}
+</script>
+</body>
+</html>
