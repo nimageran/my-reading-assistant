@@ -1,0 +1,875 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Enhanced AI Reading Assistant</title>
+
+<!-- PDF-JS -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+<!-- Baseline reset -->
+<link rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/normalize/8.0.1/normalize.min.css" />
+
+<style>
+/* ——— GLOBAL ——— */
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;
+  background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);
+  min-height:100vh;overflow:hidden
+}
+.header{
+  background:rgba(255,255,255,.95);
+  padding:15px 30px;
+  backdrop-filter:blur(10px);
+  box-shadow:0 2px 10px rgba(0,0,0,.1)
+}
+.header h1{
+  text-align:center;font-size:1.8em;color:#333;
+  background:linear-gradient(45deg,#667eea,#764ba2);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;margin-bottom:10px
+}
+.upload-section{display:flex;justify-content:center;align-items:center;gap:15px;flex-wrap:wrap}
+.file-input-container{position:relative;display:inline-block}
+.file-input{position:absolute;opacity:0;width:100%;height:100%;cursor:pointer}
+.file-button{
+  background:linear-gradient(45deg,#667eea,#764ba2);
+  color:#fff;padding:12px 24px;border-radius:8px;border:none;
+  cursor:pointer;font-size:14px;transition:.3s;font-weight:600;
+  box-shadow:0 4px 15px rgba(102,126,234,.3)
+}
+.file-button:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(102,126,234,.5)}
+.file-status{
+  color:#666;margin-left:10px;font-size:14px;
+  padding:8px 16px;background:rgba(255,255,255,.7);border-radius:20px;
+  display:flex;align-items:center;gap:8px
+}
+.upload-progress{
+  width:200px;height:4px;background:#e0e0e0;border-radius:2px;
+  overflow:hidden;margin-left:10px;display:none
+}
+.upload-progress-bar{
+  height:100%;background:linear-gradient(45deg,#667eea,#764ba2);
+  width:0%;transition:width .3s ease
+}
+
+.main-container{
+  display:grid;grid-template-columns:1fr 1fr 1fr;
+  height:calc(100vh - 140px);gap:1px;background:#ccc
+}
+.column{background:#fff;overflow:hidden;display:flex;flex-direction:column}
+.column-header{
+  background:linear-gradient(45deg,#667eea,#764ba2);
+  color:#fff;padding:12px 15px;font-weight:600;font-size:16px;text-align:center;
+  display:flex;align-items:center;justify-content:center;gap:8px;position:relative
+}
+.column-content{flex:1;overflow:auto;position:relative}
+
+/* ——— PDF viewer with enhanced controls ——— */
+.pdf-viewer{display:flex;flex-direction:column;height:100%}
+.pdf-controls{
+  display:flex;gap:8px;align-items:center;background:#f8f9fa;
+  padding:12px;border-bottom:1px solid #e0e0e0;flex-wrap:wrap;justify-content:center
+}
+.pdf-controls button{
+  background:#667eea;color:#fff;border:none;padding:8px 12px;
+  border-radius:5px;cursor:pointer;font-size:12px;transition:.3s;
+  display:flex;align-items:center;gap:4px
+}
+.pdf-controls button:hover{background:#5a6fd8;transform:translateY(-1px)}
+.pdf-controls button:disabled{background:#ccc;cursor:not-allowed;transform:none}
+.pdf-canvas-container{
+  flex:1;display:flex;justify-content:center;align-items:flex-start;
+  overflow:auto;padding:15px;background:#f8f9fa
+}
+#pdfCanvas{
+  border:1px solid #ddd;border-radius:8px;max-width:100%;
+  box-shadow:0 4px 12px rgba(0,0,0,.1);background:#fff
+}
+.page-jump{
+  display:flex;align-items:center;gap:4px;margin:0 8px
+}
+.page-jump input{
+  width:50px;padding:4px;border:1px solid #ddd;border-radius:3px;
+  text-align:center;font-size:12px
+}
+.sync-indicator{
+  position:absolute;top:8px;right:8px;
+  background:rgba(255,255,255,.9);color:#667eea;
+  padding:4px 8px;border-radius:12px;font-size:11px;
+  display:none;animation:pulse 1s infinite
+}
+.sync-indicator.active{display:block}
+@keyframes pulse{0%,100%{opacity:.7}50%{opacity:1}}
+
+/* ——— MIDDLE column: enhanced text with navigation ——— */
+.text-column{position:relative}
+.text-navigation{
+  position:absolute;top:0;right:0;z-index:10;
+  background:rgba(255,255,255,.95);backdrop-filter:blur(10px);
+  padding:8px;border-radius:0 0 0 8px;border:1px solid #e0e0e0;
+  border-top:none;border-right:none;display:flex;flex-direction:column;gap:4px
+}
+.nav-btn{
+  background:#667eea;color:#fff;border:none;padding:6px 8px;
+  border-radius:4px;cursor:pointer;font-size:11px;transition:.3s;
+  display:flex;align-items:center;gap:4px;min-width:60px
+}
+.nav-btn:hover{background:#5a6fd8}
+.nav-btn:disabled{background:#ccc;cursor:not-allowed}
+.page-indicator{
+  font-size:10px;color:#666;text-align:center;
+  background:rgba(255,255,255,.8);padding:2px 6px;border-radius:3px
+}
+
+.text-content{
+  background:#fcfcfe;padding:20px 80px 20px 25px;
+  line-height:1.8;font-size:16px;color:#333;
+  height:100%;overflow-y:auto;user-select:text;cursor:text;
+  scroll-behavior:smooth
+}
+.text-content::-webkit-scrollbar{width:8px}
+.text-content::-webkit-scrollbar-track{background:#f1f1f1;border-radius:10px}
+.text-content::-webkit-scrollbar-thumb{background:#667eea;border-radius:10px}
+.text-content::-webkit-scrollbar-thumb:hover{background:#5a6fd8}
+
+/* Enhanced page styling */
+.page{
+  background:#fff;border:1px solid #f0f0f0;border-radius:12px;
+  box-shadow:0 2px 8px rgba(0,0,0,.04);
+  padding:24px;margin-bottom:32px;position:relative;
+  transition:all .3s ease;scroll-margin-top:20px
+}
+.page.current-page{
+  border-color:#667eea;box-shadow:0 4px 16px rgba(102,126,234,.2);
+  background:#f8fbff
+}
+.page::before{
+  content:attr(data-page);position:absolute;top:-12px;right:12px;
+  font-size:11px;color:#777;background:#fff;padding:4px 8px;
+  border-radius:12px;box-shadow:0 2px 4px rgba(0,0,0,.1);
+  font-weight:600
+}
+
+/* Text selection and highlighting */
+.highlight{
+  background:linear-gradient(120deg,#f093fb 0%,#f5576c 100%);
+  color:#fff;padding:2px 4px;border-radius:3px;cursor:pointer;
+  transition:.3s;animation:highlightFade 0.5s squarely
+}
+.highlight:hover{transform:scale(1.02);box-shadow:0 2px 8px rgba(240,147,251,.4)}
+@keyframes highlightFade{0%{background:#ffeb3b}100%{background:linear-gradient(120deg,#f093fb 0%,#f5576c 100%)}}
+
+/* ——— RIGHT column (enhanced) ——— */
+.right-column-content{display:flex;flex-direction:column;height:100%;gap:12px;padding:15px}
+.selected-text-section{
+  background:#f8f9fa;border-radius:12px;padding:15px;
+  border-left:4px solid #667eea;position:relative
+}
+.selected-text-title{
+  font-weight:600;color:#333;margin-bottom:10px;font-size:14px;
+  display:flex;align-items:center;gap:8px
+}
+.selected-text{
+  font-style:italic;color:#555;line-height:1.6;min-height:50px;
+  padding:12px;background:#fff;border-radius:8px;border:1px solid #e0e0e0;
+  max-height:100px;overflow-y:auto;font-size:13px
+}
+.clear-selection{
+  position:absolute;top:10px;right:10px;
+  background:none;border:none;color:#999;cursor:pointer;
+  font-size:18px;transition:.3s;width:24px;height:24px;
+  display:flex;align-items:center;justify-content:center;border-radius:50%
+}
+.clear-selection:hover{background:#f0f0f0;color:#666}
+
+.voice-section{background:#f8f9fa;border-radius:12px;padding:15px;border-left:4px solid #11998e}
+.voice-title{font-weight:600;color:#333;margin-bottom:12px;font-size:14px}
+.voice-controls{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.control-btn{
+  background:linear-gradient(45deg,#667eea,#764ba2);
+  color:#fff;border:none;padding:8px 12px;border-radius:20px;
+  cursor:pointer;font-size:12px;transition:.3s;flex:1;min-width:60px;
+  display:flex;align-items:center;justify-content:center;gap:4px
+}
+.control-btn:hover{transform:scale(1.05);box-shadow:0 3px 10px rgba(102,126,234,.4)}
+.control-btn:disabled{opacity:.6;cursor:not-allowed;transform:none}
+.voice-settings{display:flex;flex-direction:column;gap:8px}
+.voice-setting{display:flex;justify-content:space-between;align-items:center}
+.voice-setting label{font-size:12px;color:#666;font-weight:500;flex:1}
+.voice-setting select,.voice-setting input{
+  padding:6px;border:1px solid #e0e0e0;border-radius:4px;background:#fff;
+  font-size:12px;flex:2
+}
+.voice-setting input[type=range]{flex:1.5}
+.speed-value,.pitch-value{font-size:11px;color:#666;margin-left:5px;min-width:35px}
+
+.analysis-section{
+  flex:1;background:#f8f9fa;border-radius:12px;padding:15px;
+  display:flex;flex-direction:column;border-left:4px solid #e67e22
+}
+.analysis-title{font-weight:600;color:#333;margin-bottom:12px;font-size:14px}
+.api-section{margin-bottom:12px}
+.api-tabs{display:flex;gap:4px;margin-bottom:8px}
+.api-tab{
+  background:#e9ecef;border:none;padding:6px 12px;border-radius:6px;
+  cursor:pointer;font-size:12px;transition:.3s;flex:1;text-align:center
+}
+.api-tab.active{background:linear-gradient(45deg,#667eea,#764ba2);color:#fff}
+.api-input{width:100%;padding:8px;border:1px solid #e0e0e0;
+           border-radius:6px;font-size:12px;margin-bottom:8px}
+.analyze-btn{
+  background:linear-gradient(45deg,#11998e,#38ef7d);color:#fff;border:none;
+  padding:10px 15px;border-radius:8px;cursor:pointer;font-size:13px;width:100%;
+  transition:.3s;margin-bottom:12px;font-weight:600
+}
+.analyze-btn:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(17,153,142,.4)}
+.analyze-btn:disabled{opacity:.6;cursor:not-allowed;transform:none}
+.analysis-content{
+  flex:1;background:#fff;padding:15px;border-radius:8px;
+  border:1px solid #e0e0e0;font-size:13px;line-height:1.6;overflow-y:auto;color:#555
+}
+
+/* Status and loading indicators */
+.loading{
+  display:inline-block;width:12px;height:12px;border:2px solid #f3f3f3;
+  border-top:2px solid #667eea;border-radius:50%;animation:spin 1s linear infinite;
+  margin-right:8px
+}
+@keyframes spin{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}
+.error{
+  color:#e74c3c;background:#ffeaea;padding:10px;border-radius:6px;margin-bottom:10px;
+  border-left:3px solid #e74c3c;font-size:12px
+}
+.success{
+  color:#27ae60;background:#eafaf1;padding:10px;border-radius:6px;margin-bottom:10px;
+  border-left:3px solid #27ae60;font-size:12px
+}
+
+/* Analysis results styling */
+.analysis-result{
+  background:#f8f9fa;border-radius:10px;padding:15px;margin-bottom:15px;
+  border-left:4px solid #667eea
+}
+.analysis-section-title{
+  font-weight:600;color:#333;margin-bottom:10px;font-size:14px;
+  display:flex;align-items:center;gap:8px
+}
+.summary-box{
+  background:#fff;padding:12px;border-radius:8px;
+  border:1px solid #e0e0e0;margin-bottom:12px
+}
+.persian-text{
+  font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;
+  direction:rtl;text-align:right;background:#f0f7ff;
+  padding:12px;border-radius:8px;border:1px solid #b3d9ff;margin-bottom:12px
+}
+.translation-note{font-size:11px;color:#666;font-style:italic;margin-top:5px}
+.analysis-stats{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap}
+.stat-item{
+  background:#e8f4f8;padding:6px 10px;border-radius:15px;font-size:11px;
+  color:#2c5282;font-weight:500
+}
+
+/* ——— Responsiveness ——— */
+@media(max-width:1200px){
+  .main-container{grid-template-columns:1fr 1fr}
+  .pdf-column{display:none}
+  .text-navigation{position:static;background:none;border:none;padding:0;
+    flex-direction:row;justify-content:center;margin-bottom:10px}
+}
+@media(max-width:768px){
+  .main-container{grid-template-columns:1fr;height:auto}
+  .column{min-height:400px}
+  .upload-section{flex-direction:column;gap:10px}
+  .text-navigation{flex-direction:row;gap:8px}
+}
+</style>
+</head>
+
+<body>
+<!-- ——— HEADER ——— -->
+<div class="header">
+  <h1>🤖 Enhanced AI Reading Assistant</h1>
+  <div class="upload-section">
+    <div class="file-input-container">
+      <input type="file" id="fileInput" class="file-input" accept=".pdf,.txt,.docx,.doc">
+      <button class="file-button">📁 Choose PDF / Document</button>
+    </div>
+    <div class="file-status" id="fileStatus">
+      <span>📄 No file selected</span>
+    </div>
+    <div class="upload-progress" id="uploadProgress">
+      <div class="upload-progress-bar" id="uploadProgressBar"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ——— GRID ——— -->
+<div class="main-container">
+
+  <!-- LEFT – PDF -->
+  <div class="column pdf-column">
+    <div class="column-header">
+      📄 PDF Viewer
+      <div class="sync-indicator" id="syncIndicator">🔄 Syncing...</div>
+    </div>
+    <div class="column-content">
+      <div class="pdf-viewer">
+        <div class="pdf-controls">
+          <button id="prevPage" title="Previous page">⬅️ Prev</button>
+          <span id="pageInfo">Page 0 of 0</span>
+          <button id="nextPage" title="Next page">➡️ Next</button>
+          <div class="page-jump">
+            <span>Go to:</span>
+            <input type="number" id="pageJump" min="1" placeholder="1">
+            <button id="jumpBtn" title="Jump to page">Go</button>
+          </div>
+          <button id="zoomOut" title="Zoom out">🔍-</button>
+          <span id="zoomLevel">100%</span>
+          <button id="zoomIn" title="Zoom in">🔍+</button>
+        </div>
+        <div class="pdf-canvas-container">
+          <canvas id="pdfCanvas"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MIDDLE – EXTRACTED TEXT -->
+  <div class="column text-column">
+    <div class="column-header">📖 Extracted Text</div>
+    <div class="text-navigation" id="textNavigation">
+      <button class="nav-btn" id="prevPageText" title="Previous page">⬅️ Prev</button>
+      <div class="page-indicator" id="textPageIndicator">Page 1 of 1</div>
+      <button class="nav-btn" id="nextPageText" title="Next page">➡️ Next</button>
+      <button class="nav-btn" id="jumpToCurrentPDF" title="Jump to current PDF page">📄 Sync</button>
+    </div>
+    <div class="column-content">
+      <div id="textContent" class="text-content">
+        <div class="page" data-page="Welcome">
+          <h3>📚 Welcome to Enhanced AI Reading Assistant</h3>
+          <p>Upload a PDF or text document to get started. The enhanced features include:</p>
+          <ul style="margin: 15px 0; padding-left: 20px;">
+            <li><strong>Synchronized Navigation:</strong> PDF and text columns work together</li>
+            <li><strong>Enhanced Text Navigation:</strong> Easy page navigation with visual-tags
+            <li><strong>Improved File Upload:</strong> Better support for various document formats</li>
+            <li><strong>Smart Text Selection:</strong> Select text and get instant analysis</li>
+            <li><strong>Voice Synthesis:</strong> Listen to any selected text</li>
+            <li><strong>AI Analysis:</strong> Get summaries and translations with API integration</li>
+          </ul>
+          <p>Click the "Choose PDF / Document" button above to begin!</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT – VOICE & ANALYSIS -->
+  <div class="column">
+    <div class="column-header">🎯 Analysis & Voice</div>
+    <div class="column-content">
+      <div class="right-column-content">
+
+        <!-- Selected text -->
+        <div class="selected-text-section">
+          <div class="selected-text-title">📝 Selected Text</div>
+          <button class="clear-selection" id="clearSelection" title="Clear selection">×</button>
+          <div id="selectedText" class="selected-text">
+            Select text from the middle column to see it here…
+          </div>
+        </div>
+
+        <!-- Voice -->
+        <div class="voice-section">
+          <div class="voice-title">🔊 Voice Controls</div>
+          <div class="voice-controls">
+            <button id="playBtn" class="control-btn" title="Play selected text">▶️ Play</button>
+            <button id="pauseBtn" class="control-btn" disabled title="Pause speech">⏸️ Pause</button>
+            <button id="stopBtn" class="control-btn" disabled title="Stop speech">⏹️ Stop</button>
+          </div>
+
+          <div class="voice-settings">
+            <div class="voice-setting">
+              <label>Voice:</label>
+              <select id="voiceList"><option value="">Default</option></select>
+            </div>
+            <div class="voice-setting">
+              <label>Speed:</label>
+              <input type="range" id="speedRange" min="0.5" max="2" step="0.1" value="1">
+              <span id="speedValue" class="speed-value">1.0x</span>
+            </div>
+            <div class="voice-setting">
+              <label>Pitch:</label>
+              <input type="range" id="pitchRange" min="0" max="2" step="0.1" value="1">
+              <span id="pitchValue" class="pitch-value">1.0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Analysis -->
+        <div class="analysis-section">
+          <div class="analysis-title">🧠 AI Text Analysis</div>
+
+          <div class="api-section">
+            <div class="api-tabs">
+              <button class="api-tab active" data-api="huggingface">🤗 Hugging Face</button>
+              <button class="api-Tab" data-api="openai">🤖 OpenAI</button>
+            </div>
+            <input type="text" id="apiKey" class="api-input"
+                   placeholder="Enter your Hugging Face API Token">
+            <button id="analyzeBtn" class="analyze-btn">🔍 Analyze Selected Text</button>
+          </div>
+
+          <div id="analysisContent" class="analysis-content">
+            <strong>📚 Welcome to AI Analysis!</strong><br><br>
+            Select some text from the middle column, choose an API provider (or use local analysis), and click "Analyze Selected Text" to get:
+            <ul style="margin: 10px 0; padding-left: 20px;">
+              <li>📊 Text statistics</li>
+              <li>🔍 AI-powered summary</li>
+              <li>🇮🇷 Persian translation</li>
+            </ul>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</div><!-- /main-container -->
+
+<!-- ——— SCRIPT ——— -->
+<script>
+/* -------- Enhanced State Management -------- */
+let selectedTextContent = '',
+    bookContent = '',
+    currentUtterance = null,
+    pdfDoc = null,
+    pageNumrats = 1,
+    pageRendering = false,
+    pageNumPending = null,
+    scale = 1.0,
+    currentApiProvider = 'huggingface',
+    textPages = [],
+    currentTextPage = 0,
+    syncEnabled = true;
+
+/* Helpers */
+const err = m => {
+  console.error('[AI-Reader] ' + m);
+  showStatus('❌ ' + m, 'error');
+};
+const ok = m => {
+  console.log('[AI-Reader] ' + m);
+  showStatus('✅ ' + m, 'success');
+};
+
+const showStatus = (message, type = 'info') => {
+  const status = document.getElementById('fileStatus');
+  status.innerHTML = `<span>${message}</span>`;
+  status.className = `file-status ${type}`;
+  if (type === 'success') {
+    setTimeout(() => {
+      status.className = 'file-status';
+    }, 3000);
+  }
+};
+
+const showProgress = (progress) => {
+  const progressEl = document.getElementById('uploadProgress');
+  const progressBar = document.getElementById('uploadProgressBar');
+  if (progress >= 0 && progress <= 100) {
+    progressEl.style.display = 'block';
+    progressBar.style.width = progress + '%';
+    if (progress === 100) {
+      setTimeout(() => {
+        progressEl.style.display = 'none';
+      }, 1000);
+    }
+  } else {
+    progressEl.style.display = 'none';
+  }
+};
+
+const showSyncIndicator = () => {
+  const indicator = document.getElementById('syncIndicator');
+  indicator.classList.add('active');
+  setTimeout(() => {
+    indicator.classList.remove('active');
+  }, 1500);
+};
+
+/* pdf.js worker */
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+/* -------- Enhanced File Upload -------- */
+document.getElementById('fileInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) {
+    showStatus('📄 No file selected', 'info');
+    return;
+  }
+
+  showStatus('📤 Processing ' + file.name + '...', 'info');
+  showProgress(0);
+
+  try {
+    if (file.type === 'application/pdf') {
+      await loadPDF(file);
+    } else if (file.type.includes('text') || file.name.endsWith('.txt')) {
+      await readTextFile(file);
+    } else if (file.type.includes('word') || file.name.endsWith('.docx') || file.name.endsWith('.doc')) {
+      await readWordFile(file);
+    } else {
+      err('Unsupported file format');
+    }
+  } catch (error) {
+    err('Failed to process file: ' + error.message);
+  }
+});
+
+/* -------- API-tab switching -------- */
+document.querySelectorAll('.api-tab').forEach(tab => {
+  tab.addEventListener('click', function() {
+    document.querySelectorAll('.api-tab').forEach(t => t.classList.remove('active'));
+    this.classList.add('active');
+    currentApiProvider = this.dataset.api;
+    document.getElementById('apiKey').placeholder =
+      currentApiProvider === 'huggingface'
+        ? 'Enter your Hugging Face API Token'
+        : 'Enter your OpenAI API Key';
+  });
+});
+
+/* -------- Text Selection Handling -------- */
+document.getElementById('textContent').addEventListener('mouseup', () => {
+  const selection = window.getSelection();
+  selectedTextContent = selection.toString().trim();
+  const selectedTextElement = document.getElementById('selectedText');
+  
+  if (selectedTextContent) {
+    selectedTextElement.textContent = selectedTextContent;
+    document.getElementById('playBtn').disabled = false;
+  } else {
+    selectedTextElement.textContent = 'Select text from the middle column to see it here…';
+    document.getElementById('playBtn').disabled = true;
+  }
+});
+
+document.getElementById('clearSelection').addEventListener('click', () => {
+  window.getSelection().removeAllRanges();
+  selectedTextContent = '';
+  document.getElementById('selectedText').textContent = 'Select text from the middle column to see it here…';
+  document.getElementById('playBtn').disabled = true;
+  if (currentUtterance) {
+    speechSynthesis.cancel();
+    currentUtterance = null;
+    document.getElementById('pauseBtn').disabled = true;
+    document.getElementById('stopBtn').disabled = true;
+  }
+});
+
+/* -------- Voice Synthesis -------- */
+function populateVoiceList() {
+  const voices = speechSynthesis.getVoices();
+  const voiceSelect = document.getElementById('voiceList');
+  voiceSelect.innerHTML = '<option value="">Default</option>';
+  
+  voices.forEach(voice => {
+    const option = document.createElement('option');
+    option.value = voice.name;
+    option.textContent = `${voice.name} (${voice.lang})`;
+    voiceSelect.appendChild(option);
+  });
+}
+
+populateVoiceList();
+if (speechSynthesis.onvoiceschanged !== undefined) {
+  speechSynthesis.onvoiceschanged = populateVoiceList;
+}
+
+document.getElementById('playBtn').addEventListener('click', () => {
+  if (selectedTextContent && !currentUtterance) {
+    const utterance = new SpeechSynthesisUtterance(selectedTextContent);
+    const voiceSelect = document.getElementById('voiceList');
+    const selectedVoice = voiceSelect.value;
+    const speed = parseFloat(document.getElementById('speedRange').value);
+    const pitch = parseFloat(document.getElementById('pitchRange').value);
+    
+    if (selectedVoice) {
+      utterance.voice = speechSynthesis.getVoices().find(voice => voice.name === selectedVoice);
+    }
+    
+    utterance.rate = speed;
+    utterance.pitch = pitch;
+    
+    utterance.onend = () => {
+      currentUtterance = null;
+      document.getElementById('pauseBtn').disabled = true;
+      document.getElementById('stopBtn').disabled = true;
+      document.getElementById('playBtn').disabled = false;
+    };
+    
+    speechSynthesis.speak(utterance);
+    currentUtterance = utterance;
+    document.getElementById('playBtn').disabled = true;
+    document.getElementById('pauseBtn').disabled = false;
+    document.getElementById('stopBtn').disabled = false;
+  }
+});
+
+document.getElementById('pauseBtn').addEventListener('click', () => {
+  if (currentUtterance) {
+    if (speechSynthesis.paused) {
+      speechSynthesis.resume();
+      document.getElementById('pauseBtn').textContent = '⏸️ Pause';
+    } else {
+      speechSynthesis.pause();
+      document.getElementById('pauseBtn').textContent = '▶️ Resume';
+    }
+  }
+});
+
+document.getElementById('stopBtn').addEventListener('click', () => {
+  if (currentUtterance) {
+    speechSynthesis.cancel();
+    currentUtterance = null;
+    document.getElementById('pauseBtn').disabled = true;
+    document.getElementById('pauseBtn').textContent = '⏸️ Pause';
+    document.getElementById('stopBtn').disabled = true;
+    document.getElementById('playBtn').disabled = false;
+  }
+});
+
+document.getElementById('speedRange').addEventListener('input', () => {
+  const speedValue = document.getElementById('speedRange').value;
+  document.getElementById('speedValue').textContent = `${speedValue}x`;
+});
+
+document.getElementById('pitchRange').addEventListener('input', () => {
+  const pitchValue = document.getElementById('pitchRange').value;
+  document.getElementById('pitchValue').textContent = pitchValue;
+});
+
+/* ================= Enhanced PDF Logic ================= */
+async function loadPDF(file) {
+  try {
+    showProgress(10);
+
+    // Create a FileReader to read the file as a data URL
+    const reader = new FileReader();
+    
+    // Simulate progress updates
+    const simulateProgress = setInterval(() => {
+      const currentProgress = parseInt(document.getElementById('uploadProgressBar').style.width) || 10;
+      if (currentProgress < 80) {
+        showProgress(currentProgress + 10);
+      }
+    }, 500);
+
+    reader.onload = async function(event) {
+      try {
+        const typedArray = new Uint8Array(event.target.result);
+        showProgress(80);
+
+        pdfDoc = await pdfjsLib.getDocument({ data: typedArray }).promise;
+        clearInterval(simulateProgress);
+        showProgress(90);
+
+        document.getElementById('pageInfo').textContent = `Page 1 of ${pdfDoc.numPages}`;
+        document.getElementById('pageJump').max = pdfDoc.numPages;
+
+        await renderPage(1);
+        await extractTextFromPDF();
+        showProgress(100);
+
+        ok('PDF loaded successfully - ' + pdfDoc.numPages + ' pages');
+      } catch (e) {
+        clearInterval(simulateProgress);
+        err('Failed to load PDF: ' + e.message);
+      }
+    };
+
+    reader.onerror = function() {
+      clearInterval(simulateProgress);
+      err('Error reading file');
+    };
+
+    // Read the file as an ArrayBuffer
+    reader.readAsArrayBuffer(file);
+  } catch (e) {
+    err('Failed to process PDF: ' + e.message);
+  }
+}
+
+async function extractTextFromPDF() {
+  try {
+    textPages = [];
+    const textContent = document.getElementById('textContent');
+    textContent.innerHTML = '';
+
+    for (let i = 1; i <= pdfDoc.numPages; i++) {
+      const page = await pdfDoc.getPage(i);
+      const text = await page.getTextContent();
+      const pageText = text.items.map(item => item.str).join(' ').trim();
+
+      if (pageText) {
+        textPages.push(pageText);
+        const pageDiv = document.createElement('div');
+        pageDiv.className = 'page';
+        pageDiv.dataset.page = `Page ${i}`;
+        pageDiv.innerHTML = `<p>${pageText.replace(/\n/g, '<br>')}</p>`;
+        if (i === 1) pageDiv.classList.add('current-page');
+        textContent.appendChild(pageDiv);
+      }
+    }
+
+    currentTextPage = 0;
+    document.getElementById('textPageIndicator').textContent = `Page 1 of ${textPages.length}`;
+    document.getElementById('prevPageText').disabled = true;
+    document.getElementById('nextPageText').disabled = textPages.length <= 1;
+
+    // Add navigation event listeners
+    document.getElementById('prevPageText').onclick = () => {
+      if (currentTextPage > 0) scrollToTextPage(currentTextPage - 1);
+    };
+    document.getElementById('nextPageText').onclick = () => {
+      if (currentTextPage < textPages.length - 1) scrollToTextPage(currentTextPage + 1);
+    };
+    document.getElementById('jumpToCurrentPDF').onclick = () => {
+      syncTextWithPDF(pageNum);
+    };
+
+    ok('Text extracted successfully');
+  } catch (e) {
+    err('Failed to extract text: ' + e.message);
+  }
+}
+
+async function renderPage(num) {
+  pageRendering = true;
+  
+  try {
+    const page = await pdfDoc.getPage(num);
+    const canvas = document.getElementById('pdfCanvas');
+    const ctx = canvas.getContext('2d');
+    const viewport = page.getViewport({ scale });
+    
+    canvas.height = viewport.height;
+    canvas.width = viewport.width;
+    
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    
+    pageRendering = false;
+    if (pageNumPending !== null) {
+      renderPage(pageNumPending);
+      pageNumPending = null;
+    }
+    
+    document.getElementById('pageInfo').textContent = `Page ${num} of ${pdfDoc.numPages}`;
+    document.getElementById('pageJump').value = num;
+    pageNum = num;
+    
+    // Sync with text column if enabled
+    if (syncEnabled) {
+      syncTextWithPDF(num);
+    }
+    
+  } catch (e) {
+    err('Failed to render page: ' + e.message);
+    pageRendering = false;
+  }
+}
+
+function queueRenderPage(n) {
+  if (pageRendering) {
+    pageNumPending = n;
+  } else {
+    renderPage(n);
+  }
+}
+
+function scrollToTextPage(pageIndex) {
+  const pages = document.querySelectorAll('.page');
+  if (pageIndex >= 0 && pageIndex < pages.length) {
+    pages[currentTextPage].classList.remove('current-page');
+    pages[pageIndex].classList.add('current-page');
+    pages[pageIndex].scrollIntoView({ behavior: 'smooth' });
+    currentTextPage = pageIndex;
+    document.getElementById('textPageIndicator').textContent = `Page ${pageIndex + 1} of ${textPages.length}`;
+    document.getElementById('prevPageText').disabled = pageIndex === 0;
+    document.getElementById('nextPageText').disabled = pageIndex === textPages.length - 1;
+    showSyncIndicator();
+  }
+}
+
+function syncTextWithPDF(pdfPageNum) {
+  const textPageIndex = pdfPageNum - 1;
+  if (textPageIndex >= 0 && textPageIndex < textPages.length) {
+    scrollToTextPage(textPageIndex);
+    showSyncIndicator();
+  }
+}
+
+/* Enhanced PDF Navigation */
+document.getElementById('prevPage').onclick = () => {
+  if (pageNum > 1) queueRenderPage(pageNum - 1);
+};
+
+document.getElementById('nextPage').onclick = () => {
+  if (pageNum < pdfDoc.numPages) queueRenderPage(pageNum + 1);
+};
+
+document.getElementById('jumpBtn').onclick = () => {
+  const targetPage = parseInt(document.getElementById('pageJump').value);
+  if (targetPage >= 1 && targetPage <= pdfDoc.numPages) {
+    queueRenderPage(targetPage);
+  } else {
+    err('Invalid page number');
+  }
+};
+</script>
+</body>
+</html>
