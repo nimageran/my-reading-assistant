@@ -197,7 +197,7 @@ body{
 .highlight{
   background:linear-gradient(120deg,#f093fb 0%,#f5576c 100%);
   color:#fff;padding:2px 4px;border-radius:3px;cursor:pointer;
-  transition:.3s;animation:highlightFade 0.5s squarely
+  transition:.3s;animation:highlightFade 0.5s ease
 }
 .highlight:hover{transform:scale(1.02);box-shadow:0 2px 8px rgba(240,147,251,.4)}
 @keyframes highlightFade{0%{background:#ffeb3b}100%{background:linear-gradient(120deg,#f093fb 0%,#f5576c 100%)}}
@@ -394,7 +394,7 @@ body{
           <p>Upload a PDF or text document to get started. The enhanced features include:</p>
           <ul style="margin: 15px 0; padding-left: 20px;">
             <li><strong>Synchronized Navigation:</strong> PDF and text columns work together</li>
-            <li><strong>Enhanced Text Navigation:</strong> Easy page navigation with visual-tags
+            <li><strong>Enhanced Text Navigation:</strong> Easy page navigation with visual indicators</li>
             <li><strong>Improved File Upload:</strong> Better support for various document formats</li>
             <li><strong>Smart Text Selection:</strong> Select text and get instant analysis</li>
             <li><strong>Voice Synthesis:</strong> Listen to any selected text</li>
@@ -433,7 +433,7 @@ body{
           <div class="voice-settings">
             <div class="voice-setting">
               <label>Voice:</label>
-              <select id="voiceList"><option value="">Default</option></select>
+              <select id="voiceSelect"><option value="">Default</option></select>
             </div>
             <div class="voice-setting">
               <label>Speed:</label>
@@ -455,7 +455,7 @@ body{
           <div class="api-section">
             <div class="api-tabs">
               <button class="api-tab active" data-api="huggingface">🤗 Hugging Face</button>
-              <button class="api-Tab" data-api="openai">🤖 OpenAI</button>
+              <button class="api-tab" data-api="openai">🤖 OpenAI</button>
             </div>
             <input type="text" id="apiKey" class="api-input"
                    placeholder="Enter your Hugging Face API Token">
@@ -486,7 +486,7 @@ let selectedTextContent = '',
     bookContent = '',
     currentUtterance = null,
     pdfDoc = null,
-    pageNumrats = 1,
+    pageNum = 1,
     pageRendering = false,
     pageNumPending = null,
     scale = 1.0,
@@ -583,116 +583,6 @@ document.querySelectorAll('.api-tab').forEach(tab => {
   });
 });
 
-/* -------- Text Selection Handling -------- */
-document.getElementById('textContent').addEventListener('mouseup', () => {
-  const selection = window.getSelection();
-  selectedTextContent = selection.toString().trim();
-  const selectedTextElement = document.getElementById('selectedText');
-  
-  if (selectedTextContent) {
-    selectedTextElement.textContent = selectedTextContent;
-    document.getElementById('playBtn').disabled = false;
-  } else {
-    selectedTextElement.textContent = 'Select text from the middle column to see it here…';
-    document.getElementById('playBtn').disabled = true;
-  }
-});
-
-document.getElementById('clearSelection').addEventListener('click', () => {
-  window.getSelection().removeAllRanges();
-  selectedTextContent = '';
-  document.getElementById('selectedText').textContent = 'Select text from the middle column to see it here…';
-  document.getElementById('playBtn').disabled = true;
-  if (currentUtterance) {
-    speechSynthesis.cancel();
-    currentUtterance = null;
-    document.getElementById('pauseBtn').disabled = true;
-    document.getElementById('stopBtn').disabled = true;
-  }
-});
-
-/* -------- Voice Synthesis -------- */
-function populateVoiceList() {
-  const voices = speechSynthesis.getVoices();
-  const voiceSelect = document.getElementById('voiceList');
-  voiceSelect.innerHTML = '<option value="">Default</option>';
-  
-  voices.forEach(voice => {
-    const option = document.createElement('option');
-    option.value = voice.name;
-    option.textContent = `${voice.name} (${voice.lang})`;
-    voiceSelect.appendChild(option);
-  });
-}
-
-populateVoiceList();
-if (speechSynthesis.onvoiceschanged !== undefined) {
-  speechSynthesis.onvoiceschanged = populateVoiceList;
-}
-
-document.getElementById('playBtn').addEventListener('click', () => {
-  if (selectedTextContent && !currentUtterance) {
-    const utterance = new SpeechSynthesisUtterance(selectedTextContent);
-    const voiceSelect = document.getElementById('voiceList');
-    const selectedVoice = voiceSelect.value;
-    const speed = parseFloat(document.getElementById('speedRange').value);
-    const pitch = parseFloat(document.getElementById('pitchRange').value);
-    
-    if (selectedVoice) {
-      utterance.voice = speechSynthesis.getVoices().find(voice => voice.name === selectedVoice);
-    }
-    
-    utterance.rate = speed;
-    utterance.pitch = pitch;
-    
-    utterance.onend = () => {
-      currentUtterance = null;
-      document.getElementById('pauseBtn').disabled = true;
-      document.getElementById('stopBtn').disabled = true;
-      document.getElementById('playBtn').disabled = false;
-    };
-    
-    speechSynthesis.speak(utterance);
-    currentUtterance = utterance;
-    document.getElementById('playBtn').disabled = true;
-    document.getElementById('pauseBtn').disabled = false;
-    document.getElementById('stopBtn').disabled = false;
-  }
-});
-
-document.getElementById('pauseBtn').addEventListener('click', () => {
-  if (currentUtterance) {
-    if (speechSynthesis.paused) {
-      speechSynthesis.resume();
-      document.getElementById('pauseBtn').textContent = '⏸️ Pause';
-    } else {
-      speechSynthesis.pause();
-      document.getElementById('pauseBtn').textContent = '▶️ Resume';
-    }
-  }
-});
-
-document.getElementById('stopBtn').addEventListener('click', () => {
-  if (currentUtterance) {
-    speechSynthesis.cancel();
-    currentUtterance = null;
-    document.getElementById('pauseBtn').disabled = true;
-    document.getElementById('pauseBtn').textContent = '⏸️ Pause';
-    document.getElementById('stopBtn').disabled = true;
-    document.getElementById('playBtn').disabled = false;
-  }
-});
-
-document.getElementById('speedRange').addEventListener('input', () => {
-  const speedValue = document.getElementById('speedRange').value;
-  document.getElementById('speedValue').textContent = `${speedValue}x`;
-});
-
-document.getElementById('pitchRange').addEventListener('input', () => {
-  const pitchValue = document.getElementById('pitchRange').value;
-  document.getElementById('pitchValue').textContent = pitchValue;
-});
-
 /* ================= Enhanced PDF Logic ================= */
 async function loadPDF(file) {
   try {
@@ -744,50 +634,6 @@ async function loadPDF(file) {
   }
 }
 
-async function extractTextFromPDF() {
-  try {
-    textPages = [];
-    const textContent = document.getElementById('textContent');
-    textContent.innerHTML = '';
-
-    for (let i = 1; i <= pdfDoc.numPages; i++) {
-      const page = await pdfDoc.getPage(i);
-      const text = await page.getTextContent();
-      const pageText = text.items.map(item => item.str).join(' ').trim();
-
-      if (pageText) {
-        textPages.push(pageText);
-        const pageDiv = document.createElement('div');
-        pageDiv.className = 'page';
-        pageDiv.dataset.page = `Page ${i}`;
-        pageDiv.innerHTML = `<p>${pageText.replace(/\n/g, '<br>')}</p>`;
-        if (i === 1) pageDiv.classList.add('current-page');
-        textContent.appendChild(pageDiv);
-      }
-    }
-
-    currentTextPage = 0;
-    document.getElementById('textPageIndicator').textContent = `Page 1 of ${textPages.length}`;
-    document.getElementById('prevPageText').disabled = true;
-    document.getElementById('nextPageText').disabled = textPages.length <= 1;
-
-    // Add navigation event listeners
-    document.getElementById('prevPageText').onclick = () => {
-      if (currentTextPage > 0) scrollToTextPage(currentTextPage - 1);
-    };
-    document.getElementById('nextPageText').onclick = () => {
-      if (currentTextPage < textPages.length - 1) scrollToTextPage(currentTextPage + 1);
-    };
-    document.getElementById('jumpToCurrentPDF').onclick = () => {
-      syncTextWithPDF(pageNum);
-    };
-
-    ok('Text extracted successfully');
-  } catch (e) {
-    err('Failed to extract text: ' + e.message);
-  }
-}
-
 async function renderPage(num) {
   pageRendering = true;
   
@@ -831,20 +677,6 @@ function queueRenderPage(n) {
   }
 }
 
-function scrollToTextPage(pageIndex) {
-  const pages = document.querySelectorAll('.page');
-  if (pageIndex >= 0 && pageIndex < pages.length) {
-    pages[currentTextPage].classList.remove('current-page');
-    pages[pageIndex].classList.add('current-page');
-    pages[pageIndex].scrollIntoView({ behavior: 'smooth' });
-    currentTextPage = pageIndex;
-    document.getElementById('textPageIndicator').textContent = `Page ${pageIndex + 1} of ${textPages.length}`;
-    document.getElementById('prevPageText').disabled = pageIndex === 0;
-    document.getElementById('nextPageText').disabled = pageIndex === textPages.length - 1;
-    showSyncIndicator();
-  }
-}
-
 function syncTextWithPDF(pdfPageNum) {
   const textPageIndex = pdfPageNum - 1;
   if (textPageIndex >= 0 && textPageIndex < textPages.length) {
@@ -870,6 +702,144 @@ document.getElementById('jumpBtn').onclick = () => {
     err('Invalid page number');
   }
 };
+
+/* -------- PDF-text extraction (ADDED) -------- */
+async function extractTextFromPDF() {
+  textPages = [];                 // clear previous runs
+  for (let i = 1; i <= pdfDoc.numPages; i++) {
+    const page = await pdfDoc.getPage(i);
+    const { items } = await page.getTextContent();
+    const pageText = items.map(t => t.str).join(' ');
+    textPages.push(pageText);
+  }
+
+  // render first page's text now
+  renderTextPages();
+}
+
+/* Helper to render text pages in middle column */
+function renderTextPages() {
+  const el = document.getElementById('textContent');
+  if (!el) return;
+  el.innerHTML = '';                         // clear content
+  textPages.forEach((txt, idx) => {
+    const div = document.createElement('div');
+    div.className = 'page';
+    div.dataset.page = idx + 1;
+    div.innerText = txt;
+    if (idx === 0) div.classList.add('current-page');
+    el.appendChild(div);
+  });
+
+  const indicator = document.getElementById('textPageIndicator');
+  if (indicator) indicator.textContent = `Page 1 of ${textPages.length}`;
+}
+
+/* -------- scrollToTextPage (NEW) -------- */
+function scrollToTextPage(textPageIndex) {
+  const textContainer = document.getElementById('textContent');
+  const pageDiv = textContainer.querySelector(`div.page[data-page='${textPageIndex + 1}']`);
+  if (!pageDiv) return;
+
+  // smooth scroll middle column
+  pageDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  // update highlight
+  textContainer.querySelectorAll('div.page').forEach(div => div.classList.remove('current-page'));
+  pageDiv.classList.add('current-page');
+
+  // update mini indicator if present
+  const indicator = document.getElementById('textPageIndicator');
+  if (indicator) {
+    indicator.textContent = `Page ${textPageIndex + 1} of ${textPages.length}`;
+  }
+}
+
+/* ---- Auto-scroll when voice play ---- */
+document.addEventListener('DOMContentLoaded', () => {
+  const playBtn = document.getElementById('playBtn');
+  if (!playBtn) return;
+  playBtn.addEventListener('click', () => {
+    try {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed) return;
+
+      let node = selection.anchorNode;
+      if (node.nodeType !== 1) node = node.parentElement;
+      const pageDiv = node.closest('.page');
+      if (!pageDiv) return;
+
+      // Highlight current page
+      document.querySelectorAll('.page.current-page').forEach(el => el.classList.remove('current-page'));
+      pageDiv.classList.add('current-page');
+
+      // Scroll smoothly
+      pageDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      // Update page indicator if present
+      const indicator = document.getElementById('textPageIndicator');
+      if (indicator && indicator.textContent) {
+        indicator.textContent = `Page ${pageDiv.dataset.page} of ${textPages.length}`;
+      }
+    } catch (e) {
+      console.error('Auto-scroll failed: ', e);
+    }
+  });
+});
+
+/* -------- Auto-speak & auto-scroll on text selection -------- */
+(function() {
+  const textPane = document.getElementById('textContent');
+  if (!textPane) return;
+
+  textPane.addEventListener('mouseup', () => {
+    const sel = window.getSelection && window.getSelection();
+    if (!sel) return;
+
+    const selectedText = sel.toString().trim();
+    // Display selected text in the right column
+    const selBox = document.getElementById("selectedText");
+    if (selBox) selBox.textContent = selectedText;
+    selectedTextContent = selectedText;
+    if (!selectedText) return;
+
+    // Scroll selection into view
+    try {
+      const range = sel.getRangeAt(0);
+      const el = range.startContainer.parentNode;
+      if (el && el.scrollIntoView) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+
+      // Highlight the current page
+      const pageEl = el.closest && el.closest('.page');
+      if (pageEl) {
+        document
+          .querySelectorAll('#textContent .page')
+          .forEach(p => p.classList.remove('current-page'));
+        pageEl.classList.add('current-page');
+
+        const pageNum = pageEl.dataset.page || '?';
+        const indicator = document.getElementById('textPageIndicator');
+        if (indicator) {
+          indicator.textContent = `Page ${pageNum} of ${textPages.length || '?'}`;
+        }
+      }
+    } catch(e) {
+      console.warn('Auto-scroll failed:', e);
+    }
+
+    // Speak the selected text
+    try {
+      speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(selectedText);
+      utter.lang = 'en-US';
+      speechSynthesis.speak(utter);
+    } catch(e) {
+      console.warn('Speech failed:', e);
+    }
+  });
+})();
 </script>
 </body>
 </html>
