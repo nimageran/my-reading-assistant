@@ -832,12 +832,50 @@ document.addEventListener('DOMContentLoaded', () => {
     // Speak the selected text
     try {
       speechSynthesis.cancel();
-      const utter = new SpeechSynthesisUtterance(selectedText);
-      utter.lang = 'en-US';
-      speechSynthesis.speak(utter);
+const utter = new SpeechSynthesisUtterance(selectedText);
+
+// Pick requested voice
+const voiceSelect = document.getElementById('voiceSelect');
+const voices = speechSynthesis.getVoices();
+const selIdx = parseInt(voiceSelect && voiceSelect.value, 10);
+if (!isNaN(selIdx) && voices[selIdx]) {
+  utter.voice = voices[selIdx];
+  utter.lang = voices[selIdx].lang;
+}
+speechSynthesis.speak(utter);
     } catch(e) {
       console.warn('Speech failed:', e);
     }
+  });
+})();
+// ----------- Voice list handling -----------
+(function setupVoices() {
+  const voiceSelect = document.getElementById('voiceSelect');
+  if (!voiceSelect) return;
+  function fill() {
+    const voices = speechSynthesis.getVoices();
+    if (!voices.length) return; // wait until voices are loaded
+    voiceSelect.innerHTML = '';
+    voices.forEach((v, i) => {
+      const opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = `${v.name} (${v.lang})${v.default ? ' — DEFAULT' : ''}`;
+      voiceSelect.appendChild(opt);
+    });
+    // Keep previously selected voice if available
+    if (voiceSelect.dataset.prev && voices[voiceSelect.dataset.prev]) {
+      voiceSelect.value = voiceSelect.dataset.prev;
+    }
+  }
+
+  // Initial population
+  fill();
+  // Populate again when voices list changes (Chrome quirk)
+  speechSynthesis.onvoiceschanged = fill;
+
+  // Remember user choice
+  voiceSelect.addEventListener('change', () => {
+    voiceSelect.dataset.prev = voiceSelect.value;
   });
 })();
 </script>
