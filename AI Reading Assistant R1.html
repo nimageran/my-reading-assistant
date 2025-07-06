@@ -1,9 +1,48 @@
-<!DOCTYPE html>
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>AI Reading Assistant – Three-Column Layout</title>
+<title>Enhanced AI Reading Assistant</title>
 
 <!-- PDF-JS -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -32,91 +71,172 @@ body{
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;
   background-clip:text;margin-bottom:10px
 }
-.upload-section{display:flex;justify-content:center;align-items:center;gap:15px}
+.upload-section{display:flex;justify-content:center;align-items:center;gap:15px;flex-wrap:wrap}
 .file-input-container{position:relative;display:inline-block}
 .file-input{position:absolute;opacity:0;width:100%;height:100%;cursor:pointer}
 .file-button{
   background:linear-gradient(45deg,#667eea,#764ba2);
-  color:#fff;padding:10px 20px;border-radius:8px;border:none;
-  cursor:pointer;font-size:14px;transition:.3s
+  color:#fff;padding:12px 24px;border-radius:8px;border:none;
+  cursor:pointer;font-size:14px;transition:.3s;font-weight:600;
+  box-shadow:0 4px 15px rgba(102,126,234,.3)
 }
-.file-button:hover{transform:translateY(-2px);box-shadow:0 5px 15px rgba(102,126,234,.4)}
+.file-button:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(102,126,234,.5)}
+.file-status{
+  color:#666;margin-left:10px;font-size:14px;
+  padding:8px 16px;background:rgba(255,255,255,.7);border-radius:20px;
+  display:flex;align-items:center;gap:8px
+}
+.upload-progress{
+  width:200px;height:4px;background:#e0e0e0;border-radius:2px;
+  overflow:hidden;margin-left:10px;display:none
+}
+.upload-progress-bar{
+  height:100%;background:linear-gradient(45deg,#667eea,#764ba2);
+  width:0%;transition:width .3s ease
+}
+
 .main-container{
   display:grid;grid-template-columns:1fr 1fr 1fr;
-  height:calc(100vh - 120px);gap:1px;background:#ccc
+  height:calc(100vh - 140px);gap:1px;background:#ccc
 }
 .column{background:#fff;overflow:hidden;display:flex;flex-direction:column}
 .column-header{
   background:linear-gradient(45deg,#667eea,#764ba2);
-  color:#fff;padding:15px;font-weight:600;font-size:16px;text-align:center
+  color:#fff;padding:12px 15px;font-weight:600;font-size:16px;text-align:center;
+  display:flex;align-items:center;justify-content:center;gap:8px;position:relative
 }
-.column-content{flex:1;overflow:auto;padding:15px}
+.column-content{flex:1;overflow:auto;position:relative}
 
-/* ——— PDF viewer (unchanged) ——— */
-.pdf-viewer{display:flex;flex-direction:column;align-items:center;gap:10px}
+/* ——— PDF viewer with enhanced controls ——— */
+.pdf-viewer{display:flex;flex-direction:column;height:100%}
 .pdf-controls{
-  display:flex;gap:10px;align-items:center;background:#f8f9fa;
-  padding:10px;border-radius:8px;width:100%;justify-content:center
+  display:flex;gap:8px;align-items:center;background:#f8f9fa;
+  padding:12px;border-bottom:1px solid #e0e0e0;flex-wrap:wrap;justify-content:center
 }
 .pdf-controls button{
   background:#667eea;color:#fff;border:none;padding:8px 12px;
-  border-radius:5px;cursor:pointer;font-size:12px
+  border-radius:5px;cursor:pointer;font-size:12px;transition:.3s;
+  display:flex;align-items:center;gap:4px
 }
-.pdf-controls button:hover{background:#5a6fd8}
-.pdf-controls button:disabled{background:#ccc;cursor:not-allowed}
-#pdfCanvas{border:1px solid #ddd;border-radius:8px;max-width:100%;
-           box-shadow:0 4px 8px rgba(0,0,0,.08)}
+.pdf-controls button:hover{background:#5a6fd8;transform:translateY(-1px)}
+.pdf-controls button:disabled{background:#ccc;cursor:not-allowed;transform:none}
+.pdf-canvas-container{
+  flex:1;display:flex;justify-content:center;align-items:flex-start;
+  overflow:auto;padding:15px;background:#f8f9fa
+}
+#pdfCanvas{
+  border:1px solid #ddd;border-radius:8px;max-width:100%;
+  box-shadow:0 4px 12px rgba(0,0,0,.1);background:#fff
+}
+.page-jump{
+  display:flex;align-items:center;gap:4px;margin:0 8px
+}
+.page-jump input{
+  width:50px;padding:4px;border:1px solid #ddd;border-radius:3px;
+  text-align:center;font-size:12px
+}
+.sync-indicator{
+  position:absolute;top:8px;right:8px;
+  background:rgba(255,255,255,.9);color:#667eea;
+  padding:4px 8px;border-radius:12px;font-size:11px;
+  display:none;animation:pulse 1s infinite
+}
+.sync-indicator.active{display:block}
+@keyframes pulse{0%,100%{opacity:.7}50%{opacity:1}}
 
-/* ——— MIDDLE column: improved extracted text ——— */
+/* ——— MIDDLE column: enhanced text with navigation ——— */
+.text-column{position:relative}
+.text-navigation{
+  position:absolute;top:0;right:0;z-index:10;
+  background:rgba(255,255,255,.95);backdrop-filter:blur(10px);
+  padding:8px;border-radius:0 0 0 8px;border:1px solid #e0e0e0;
+  border-top:none;border-right:none;display:flex;flex-direction:column;gap:4px
+}
+.nav-btn{
+  background:#667eea;color:#fff;border:none;padding:6px 8px;
+  border-radius:4px;cursor:pointer;font-size:11px;transition:.3s;
+  display:flex;align-items:center;gap:4px;min-width:60px
+}
+.nav-btn:hover{background:#5a6fd8}
+.nav-btn:disabled{background:#ccc;cursor:not-allowed}
+.page-indicator{
+  font-size:10px;color:#666;text-align:center;
+  background:rgba(255,255,255,.8);padding:2px 6px;border-radius:3px
+}
+
 .text-content{
-  background:#fcfcfe;border:1px solid #e5e7ff;border-radius:12px;
-  padding:25px 30px;line-height:1.9;font-size:16px;color:#333;
-  max-width:42rem;margin:0 auto;overflow-y:auto;user-select:text;cursor:text
+  background:#fcfcfe;padding:20px 80px 20px 25px;
+  line-height:1.8;font-size:16px;color:#333;
+  height:100%;overflow-y:auto;user-select:text;cursor:text;
+  scroll-behavior:smooth
 }
 .text-content::-webkit-scrollbar{width:8px}
 .text-content::-webkit-scrollbar-track{background:#f1f1f1;border-radius:10px}
 .text-content::-webkit-scrollbar-thumb{background:#667eea;border-radius:10px}
+.text-content::-webkit-scrollbar-thumb:hover{background:#5a6fd8}
 
-/* Each logical PDF page gets a soft “card” */
+/* Enhanced page styling */
 .page{
-  background:#fff;border:1px solid #f0f0f0;border-radius:10px;
-  box-shadow:0 1px 4px rgba(0,0,0,.06);
-  padding:20px 24px;margin-bottom:40px;position:relative
+  background:#fff;border:1px solid #f0f0f0;border-radius:12px;
+  box-shadow:0 2px 8px rgba(0,0,0,.04);
+  padding:24px;margin-bottom:32px;position:relative;
+  transition:all .3s ease;scroll-margin-top:20px
+}
+.page.current-page{
+  border-color:#667eea;box-shadow:0 4px 16px rgba(102,126,234,.2);
+  background:#f8fbff
 }
 .page::before{
-  content:attr(data-page);position:absolute;top:-18px;right:8px;
-  font-size:12px;color:#777;background:#fff;padding:0 6px
+  content:attr(data-page);position:absolute;top:-12px;right:12px;
+  font-size:11px;color:#777;background:#fff;padding:4px 8px;
+  border-radius:12px;box-shadow:0 2px 4px rgba(0,0,0,.1);
+  font-weight:600
 }
 
-/* Highlight when user selects */
+/* Text selection and highlighting */
 .highlight{
   background:linear-gradient(120deg,#f093fb 0%,#f5576c 100%);
-  color:#fff;padding:2px 4px;border-radius:3px;cursor:pointer;transition:.3s
+  color:#fff;padding:2px 4px;border-radius:3px;cursor:pointer;
+  transition:.3s;animation:highlightFade 0.5s ease
 }
-.highlight:hover{transform:scale(1.02)}
+.highlight:hover{transform:scale(1.02);box-shadow:0 2px 8px rgba(240,147,251,.4)}
+@keyframes highlightFade{0%{background:#ffeb3b}100%{background:linear-gradient(120deg,#f093fb 0%,#f5576c 100%)}}
 
-/* ——— RIGHT column (exactly as before) ——— */
-.right-column-content{display:flex;flex-direction:column;height:100%;gap:15px}
+/* ——— RIGHT column (enhanced) ——— */
+.right-column-content{display:flex;flex-direction:column;height:100%;gap:12px;padding:15px}
 .selected-text-section{
-  background:#f8f9fa;border-radius:10px;padding:15px;
-  min-height:120px;border-left:4px solid #667eea
+  background:#f8f9fa;border-radius:12px;padding:15px;
+  border-left:4px solid #667eea;position:relative
 }
-.selected-text-title{font-weight:600;color:#333;margin-bottom:10px;font-size:14px}
+.selected-text-title{
+  font-weight:600;color:#333;margin-bottom:10px;font-size:14px;
+  display:flex;align-items:center;gap:8px
+}
 .selected-text{
-  font-style:italic;color:#555;line-height:1.6;min-height:60px;
-  padding:10px;background:#fff;border-radius:5px;border:1px solid #e0e0e0
+  font-style:italic;color:#555;line-height:1.6;min-height:50px;
+  padding:12px;background:#fff;border-radius:8px;border:1px solid #e0e0e0;
+  max-height:100px;overflow-y:auto;font-size:13px
 }
-.voice-section{background:#f8f9fa;border-radius:10px;padding:15px}
-.voice-title{font-weight:600;color:#333;margin-bottom:15px;font-size:14px}
-.voice-controls{display:flex;gap:8px;margin-bottom:15px;flex-wrap:wrap}
+.clear-selection{
+  position:absolute;top:10px;right:10px;
+  background:none;border:none;color:#999;cursor:pointer;
+  font-size:18px;transition:.3s;width:24px;height:24px;
+  display:flex;align-items:center;justify-content:center;border-radius:50%
+}
+.clear-selection:hover{background:#f0f0f0;color:#666}
+
+.voice-section{background:#f8f9fa;border-radius:12px;padding:15px;border-left:4px solid #11998e}
+.voice-title{font-weight:600;color:#333;margin-bottom:12px;font-size:14px}
+.voice-controls{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
 .control-btn{
   background:linear-gradient(45deg,#667eea,#764ba2);
   color:#fff;border:none;padding:8px 12px;border-radius:20px;
-  cursor:pointer;font-size:12px;transition:.3s;flex:1;min-width:70px
+  cursor:pointer;font-size:12px;transition:.3s;flex:1;min-width:60px;
+  display:flex;align-items:center;justify-content:center;gap:4px
 }
 .control-btn:hover{transform:scale(1.05);box-shadow:0 3px 10px rgba(102,126,234,.4)}
 .control-btn:disabled{opacity:.6;cursor:not-allowed;transform:none}
-.voice-settings{display:flex;flex-direction:column;gap:10px}
+.voice-settings{display:flex;flex-direction:column;gap:8px}
 .voice-setting{display:flex;justify-content:space-between;align-items:center}
 .voice-setting label{font-size:12px;color:#666;font-weight:500;flex:1}
 .voice-setting select,.voice-setting input{
@@ -127,30 +247,32 @@ body{
 .speed-value,.pitch-value{font-size:11px;color:#666;margin-left:5px;min-width:35px}
 
 .analysis-section{
-  flex:1;background:#f8f9fa;border-radius:10px;padding:15px;
-  display:flex;flex-direction:column
+  flex:1;background:#f8f9fa;border-radius:12px;padding:15px;
+  display:flex;flex-direction:column;border-left:4px solid #e67e22
 }
-.analysis-title{font-weight:600;color:#333;margin-bottom:15px;font-size:14px}
-.api-section{margin-bottom:15px}
-.api-tabs{display:flex;gap:5px;margin-bottom:10px}
+.analysis-title{font-weight:600;color:#333;margin-bottom:12px;font-size:14px}
+.api-section{margin-bottom:12px}
+.api-tabs{display:flex;gap:4px;margin-bottom:8px}
 .api-tab{
-  background:#e9ecef;border:none;padding:8px 12px;border-radius:5px;
-  cursor:pointer;font-size:12px;transition:.3s
+  background:#e9ecef;border:none;padding:6px 12px;border-radius:6px;
+  cursor:pointer;font-size:12px;transition:.3s;flex:1;text-align:center
 }
 .api-tab.active{background:linear-gradient(45deg,#667eea,#764ba2);color:#fff}
 .api-input{width:100%;padding:8px;border:1px solid #e0e0e0;
-           border-radius:5px;font-size:12px;margin-bottom:10px}
+           border-radius:6px;font-size:12px;margin-bottom:8px}
 .analyze-btn{
   background:linear-gradient(45deg,#11998e,#38ef7d);color:#fff;border:none;
-  padding:10px 15px;border-radius:6px;cursor:pointer;font-size:13px;width:100%;
-  transition:.3s;margin-bottom:15px
+  padding:10px 15px;border-radius:8px;cursor:pointer;font-size:13px;width:100%;
+  transition:.3s;margin-bottom:12px;font-weight:600
 }
-.analyze-btn:hover{transform:translateY(-1px);box-shadow:0 3px 10px rgba(17,153,142,.4)}
+.analyze-btn:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(17,153,142,.4)}
 .analyze-btn:disabled{opacity:.6;cursor:not-allowed;transform:none}
 .analysis-content{
   flex:1;background:#fff;padding:15px;border-radius:8px;
   border:1px solid #e0e0e0;font-size:13px;line-height:1.6;overflow-y:auto;color:#555
 }
+
+/* Status and loading indicators */
 .loading{
   display:inline-block;width:12px;height:12px;border:2px solid #f3f3f3;
   border-top:2px solid #667eea;border-radius:50%;animation:spin 1s linear infinite;
@@ -158,15 +280,15 @@ body{
 }
 @keyframes spin{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}
 .error{
-  color:#e74c3c;background:#ffeaea;padding:8px;border-radius:5px;margin-bottom:10px;
+  color:#e74c3c;background:#ffeaea;padding:10px;border-radius:6px;margin-bottom:10px;
   border-left:3px solid #e74c3c;font-size:12px
 }
 .success{
-  color:#27ae60;background:#eafaf1;padding:8px;border-radius:5px;margin-bottom:10px;
+  color:#27ae60;background:#eafaf1;padding:10px;border-radius:6px;margin-bottom:10px;
   border-left:3px solid #27ae60;font-size:12px
 }
 
-/* nice little boxes for stats / summary */
+/* Analysis results styling */
 .analysis-result{
   background:#f8f9fa;border-radius:10px;padding:15px;margin-bottom:15px;
   border-left:4px solid #667eea
@@ -185,19 +307,24 @@ body{
   padding:12px;border-radius:8px;border:1px solid #b3d9ff;margin-bottom:12px
 }
 .translation-note{font-size:11px;color:#666;font-style:italic;margin-top:5px}
-.analysis-stats{display:flex;gap:15px;margin-top:10px;flex-wrap:wrap}
+.analysis-stats{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap}
 .stat-item{
   background:#e8f4f8;padding:6px 10px;border-radius:15px;font-size:11px;
-  color:#2c5282
+  color:#2c5282;font-weight:500
 }
 
 /* ——— Responsiveness ——— */
 @media(max-width:1200px){
-  .main-container{grid-template-columns:1fr 1fr}.pdf-column{display:none}
+  .main-container{grid-template-columns:1fr 1fr}
+  .pdf-column{display:none}
+  .text-navigation{position:static;background:none;border:none;padding:0;
+    flex-direction:row;justify-content:center;margin-bottom:10px}
 }
 @media(max-width:768px){
   .main-container{grid-template-columns:1fr;height:auto}
   .column{min-height:400px}
+  .upload-section{flex-direction:column;gap:10px}
+  .text-navigation{flex-direction:row;gap:8px}
 }
 </style>
 </head>
@@ -205,13 +332,18 @@ body{
 <body>
 <!-- ——— HEADER ——— -->
 <div class="header">
-  <h1>🤖 AI Reading Assistant – Three Columns</h1>
+  <h1>🤖 Enhanced AI Reading Assistant</h1>
   <div class="upload-section">
     <div class="file-input-container">
-      <input type="file" id="fileInput" class="file-input" accept=".pdf,.txt,.docx">
+      <input type="file" id="fileInput" class="file-input" accept=".pdf,.txt,.docx,.doc">
       <button class="file-button">📁 Choose PDF / Document</button>
     </div>
-    <span id="fileName" style="color:#666;margin-left:10px">No file selected</span>
+    <div class="file-status" id="fileStatus">
+      <span>📄 No file selected</span>
+    </div>
+    <div class="upload-progress" id="uploadProgress">
+      <div class="upload-progress-bar" id="uploadProgressBar"></div>
+    </div>
   </div>
 </div>
 
@@ -220,33 +352,61 @@ body{
 
   <!-- LEFT – PDF -->
   <div class="column pdf-column">
-    <div class="column-header">📄 PDF Viewer</div>
+    <div class="column-header">
+      📄 PDF Viewer
+      <div class="sync-indicator" id="syncIndicator">🔄 Syncing...</div>
+    </div>
     <div class="column-content">
       <div class="pdf-viewer">
         <div class="pdf-controls">
-          <button id="prevPage">⬅️ Prev</button>
+          <button id="prevPage" title="Previous page">⬅️ Prev</button>
           <span id="pageInfo">Page 0 of 0</span>
-          <button id="nextPage">➡️ Next</button>
-          <button id="zoomOut">🔍-</button>
+          <button id="nextPage" title="Next page">➡️ Next</button>
+          <div class="page-jump">
+            <span>Go to:</span>
+            <input type="number" id="pageJump" min="1" placeholder="1">
+            <button id="jumpBtn" title="Jump to page">Go</button>
+          </div>
+          <button id="zoomOut" title="Zoom out">🔍-</button>
           <span id="zoomLevel">100%</span>
-          <button id="zoomIn">🔍+</button>
+          <button id="zoomIn" title="Zoom in">🔍+</button>
         </div>
-        <canvas id="pdfCanvas"></canvas>
+        <div class="pdf-canvas-container">
+          <canvas id="pdfCanvas"></canvas>
+        </div>
       </div>
     </div>
   </div>
 
   <!-- MIDDLE – EXTRACTED TEXT -->
-  <div class="column">
+  <div class="column text-column">
     <div class="column-header">📖 Extracted Text</div>
+    <div class="text-navigation" id="textNavigation">
+      <button class="nav-btn" id="prevPageText" title="Previous page">⬅️ Prev</button>
+      <div class="page-indicator" id="textPageIndicator">Page 1 of 1</div>
+      <button class="nav-btn" id="nextPageText" title="Next page">➡️ Next</button>
+      <button class="nav-btn" id="jumpToCurrentPDF" title="Jump to current PDF page">📄 Sync</button>
+    </div>
     <div class="column-content">
       <div id="textContent" class="text-content">
-        Upload a file to see its contents here…
+        <div class="page" data-page="Welcome">
+          <h3>📚 Welcome to Enhanced AI Reading Assistant</h3>
+          <p>Upload a PDF or text document to get started. The enhanced features include:</p>
+          <ul style="margin: 15px 0; padding-left: 20px;">
+            <li><strong>Synchronized Navigation:</strong> PDF and text columns work together</li>
+            <li><strong>Enhanced Text Navigation:</strong> Easy page navigation with visual indicators</li>
+            <li><strong>Improved File Upload:</strong> Better support for various document formats</li>
+            <li><strong>Smart Text Selection:</strong> Select text and get instant analysis</li>
+            <li><strong>Voice Synthesis:</strong> Listen to any selected text</li>
+            <li><strong>AI Analysis:</strong> Get summaries and translations with API integration</li>
+          </ul>
+          <p>Click the "Choose PDF / Document" button above to begin!</p>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- RIGHT – VOICE & ANALYSIS (restored) -->
+  <!-- RIGHT – VOICE & ANALYSIS -->
   <div class="column">
     <div class="column-header">🎯 Analysis & Voice</div>
     <div class="column-content">
@@ -255,6 +415,7 @@ body{
         <!-- Selected text -->
         <div class="selected-text-section">
           <div class="selected-text-title">📝 Selected Text</div>
+          <button class="clear-selection" id="clearSelection" title="Clear selection">×</button>
           <div id="selectedText" class="selected-text">
             Select text from the middle column to see it here…
           </div>
@@ -264,9 +425,9 @@ body{
         <div class="voice-section">
           <div class="voice-title">🔊 Voice Controls</div>
           <div class="voice-controls">
-            <button id="playBtn"  class="control-btn">▶️ Play</button>
-            <button id="pauseBtn" class="control-btn" disabled>⏸️ Pause</button>
-            <button id="stopBtn"  class="control-btn" disabled>⏹️ Stop</button>
+            <button id="playBtn" class="control-btn" title="Play selected text">▶️ Play</button>
+            <button id="pauseBtn" class="control-btn" disabled title="Pause speech">⏸️ Pause</button>
+            <button id="stopBtn" class="control-btn" disabled title="Stop speech">⏹️ Stop</button>
           </div>
 
           <div class="voice-settings">
@@ -302,8 +463,13 @@ body{
           </div>
 
           <div id="analysisContent" class="analysis-content">
-            <strong>📚 Welcome!</strong><br><br>
-            Select some text, pick an API (or run local), and click analyze.
+            <strong>📚 Welcome to AI Analysis!</strong><br><br>
+            Select some text from the middle column, choose an API provider (or use local analysis), and click "Analyze Selected Text" to get:
+            <ul style="margin: 10px 0; padding-left: 20px;">
+              <li>📊 Text statistics</li>
+              <li>🔍 AI-powered summary</li>
+              <li>🇮🇷 Persian translation</li>
+            </ul>
           </div>
         </div>
 
@@ -315,322 +481,365 @@ body{
 
 <!-- ——— SCRIPT ——— -->
 <script>
-/* -------- State -------- */
+/* -------- Enhanced State Management -------- */
 let selectedTextContent = '',
-    bookContent         = '',
-    currentUtterance    = null,
-    pdfDoc              = null,
-    pageNum             = 1,
-    pageRendering       = false,
-    pageNumPending      = null,
-    scale               = 1.0,
-    currentApiProvider  = 'huggingface';
+    bookContent = '',
+    currentUtterance = null,
+    pdfDoc = null,
+    pageNum = 1,
+    pageRendering = false,
+    pageNumPending = null,
+    scale = 1.0,
+    currentApiProvider = 'huggingface',
+    textPages = [],
+    currentTextPage = 0,
+    syncEnabled = true;
 
 /* Helpers */
-const err = m=>{alert('❌ '+m);console.error('[AI-Reader] '+m)};
-const ok  = m=>{console.log('[AI-Reader] '+m)};
+const err = m => {
+  console.error('[AI-Reader] ' + m);
+  showStatus('❌ ' + m, 'error');
+};
+const ok = m => {
+  console.log('[AI-Reader] ' + m);
+  showStatus('✅ ' + m, 'success');
+};
+
+const showStatus = (message, type = 'info') => {
+  const status = document.getElementById('fileStatus');
+  status.innerHTML = `<span>${message}</span>`;
+  status.className = `file-status ${type}`;
+  if (type === 'success') {
+    setTimeout(() => {
+      status.className = 'file-status';
+    }, 3000);
+  }
+};
+
+const showProgress = (progress) => {
+  const progressEl = document.getElementById('uploadProgress');
+  const progressBar = document.getElementById('uploadProgressBar');
+  if (progress >= 0 && progress <= 100) {
+    progressEl.style.display = 'block';
+    progressBar.style.width = progress + '%';
+    if (progress === 100) {
+      setTimeout(() => {
+        progressEl.style.display = 'none';
+      }, 1000);
+    }
+  } else {
+    progressEl.style.display = 'none';
+  }
+};
+
+const showSyncIndicator = () => {
+  const indicator = document.getElementById('syncIndicator');
+  indicator.classList.add('active');
+  setTimeout(() => {
+    indicator.classList.remove('active');
+  }, 1500);
+};
 
 /* pdf.js worker */
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-/* -------- File upload -------- */
-document.getElementById('fileInput').addEventListener('change',e=>{
-  const file=e.target.files[0]; if(!file)return;
-  document.getElementById('fileName').textContent=file.name;
-  if(file.type.includes('pdf')) loadPDF(file); else readTextFile(file);
+/* -------- Enhanced File Upload -------- */
+document.getElementById('fileInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) {
+    showStatus('📄 No file selected', 'info');
+    return;
+  }
+
+  showStatus('📤 Processing ' + file.name + '...', 'info');
+  showProgress(0);
+
+  try {
+    if (file.type === 'application/pdf') {
+      await loadPDF(file);
+    } else if (file.type.includes('text') || file.name.endsWith('.txt')) {
+      await readTextFile(file);
+    } else if (file.type.includes('word') || file.name.endsWith('.docx') || file.name.endsWith('.doc')) {
+      await readWordFile(file);
+    } else {
+      err('Unsupported file format');
+    }
+  } catch (error) {
+    err('Failed to process file: ' + error.message);
+  }
 });
 
 /* -------- API-tab switching -------- */
-document.querySelectorAll('.api-tab').forEach(tab=>{
-  tab.addEventListener('click',function(){
-    document.querySelectorAll('.api-tab').forEach(t=>t.classList.remove('active'));
+document.querySelectorAll('.api-tab').forEach(tab => {
+  tab.addEventListener('click', function() {
+    document.querySelectorAll('.api-tab').forEach(t => t.classList.remove('active'));
     this.classList.add('active');
-    currentApiProvider=this.dataset.api;
+    currentApiProvider = this.dataset.api;
     document.getElementById('apiKey').placeholder =
-      currentApiProvider==='huggingface'
+      currentApiProvider === 'huggingface'
         ? 'Enter your Hugging Face API Token'
         : 'Enter your OpenAI API Key';
   });
 });
 
-/* ================= PDF logic ================= */
-async function loadPDF(file){
-  try{
-    const buf=await file.arrayBuffer();
-    pdfDoc=await pdfjsLib.getDocument({data:buf}).promise;
-    document.getElementById('pageInfo').textContent=`Page 1 of ${pdfDoc.numPages}`;
-    renderPage(1);
-    extractTextFromPDF();
-    ok('PDF loaded');
-  }catch(e){err('Failed to load PDF: '+e.message);}
-}
+/* ================= Enhanced PDF Logic ================= */
+async function loadPDF(file) {
+  try {
+    showProgress(10);
 
-async function renderPage(num){
-  pageRendering=true;
-  const page=await pdfDoc.getPage(num);
-  const canvas=document.getElementById('pdfCanvas');
-  const ctx=canvas.getContext('2d');
-  const viewport=page.getViewport({scale});
-  canvas.height=viewport.height;
-  canvas.width =viewport.width;
-  await page.render({canvasContext:ctx,viewport}).promise;
-  pageRendering=false;
-  if(pageNumPending!==null){renderPage(pageNumPending);pageNumPending=null}
-  document.getElementById('pageInfo').textContent=`Page ${num} of ${pdfDoc.numPages}`;
-  pageNum=num;
-}
-function queueRenderPage(n){pageRendering?pageNumPending=n:renderPage(n)}
+    // Create a FileReader to read the file as a data URL
+    const reader = new FileReader();
+    
+    // Simulate progress updates
+    const simulateProgress = setInterval(() => {
+      const currentProgress = parseInt(document.getElementById('uploadProgressBar').style.width) || 10;
+      if (currentProgress < 80) {
+        showProgress(currentProgress + 10);
+      }
+    }, 500);
 
-/* Nav & zoom */
-document.getElementById('prevPage').onclick=()=>{if(pageNum>1)queueRenderPage(--pageNum)};
-document.getElementById('nextPage').onclick=()=>{if(pageNum<pdfDoc.numPages)queueRenderPage(++pageNum)};
-document.getElementById('zoomIn').onclick =()=>{scale+=.2;document.getElementById('zoomLevel').textContent=Math.round(scale*100)+'%';queueRenderPage(pageNum)};
-document.getElementById('zoomOut').onclick=()=>{if(scale>.4){scale-=.2;document.getElementById('zoomLevel').textContent=Math.round(scale*100)+'%';queueRenderPage(pageNum)}};
+    reader.onload = async function(event) {
+      try {
+        const typedArray = new Uint8Array(event.target.result);
+        showProgress(80);
 
-/* ---- NEW: page-aware extraction ---- */
-async function extractTextFromPDF(){
-  let raw='', blocks=[];
-  for(let i=1;i<=pdfDoc.numPages;i++){
-    const page=await pdfDoc.getPage(i);
-    const tc=await page.getTextContent();
-    const text=tc.items.map(t=>t.str).join(' ');
-    raw+=text+'\n\n';
-    blocks.push(`<div class="page" data-page="Page ${i}">${text.replace(/\n/g,' ').replace(/\s+/g,' ')}</div>`);
+        pdfDoc = await pdfjsLib.getDocument({ data: typedArray }).promise;
+        clearInterval(simulateProgress);
+        showProgress(90);
+
+        document.getElementById('pageInfo').textContent = `Page 1 of ${pdfDoc.numPages}`;
+        document.getElementById('pageJump').max = pdfDoc.numPages;
+
+        await renderPage(1);
+        await extractTextFromPDF();
+        showProgress(100);
+
+        ok('PDF loaded successfully - ' + pdfDoc.numPages + ' pages');
+      } catch (e) {
+        clearInterval(simulateProgress);
+        err('Failed to load PDF: ' + e.message);
+      }
+    };
+
+    reader.onerror = function() {
+      clearInterval(simulateProgress);
+      err('Error reading file');
+    };
+
+    // Read the file as an ArrayBuffer
+    reader.readAsArrayBuffer(file);
+  } catch (e) {
+    err('Failed to process PDF: ' + e.message);
   }
-  bookContent=raw;
-  displayText(blocks.join(''));
 }
 
-/* -------- Plain-text files -------- */
-function readTextFile(file){
-  const r=new FileReader();
-  r.onload=e=>{
-    const txt=e.target.result;
-    bookContent=txt;
-    const html=`<div class="page" data-page="Text">${txt
-                  .replace(/\n\n+/g,'</div><div class="page" data-page="·">')
-                  .replace(/\n/g,'<br>')}</div>`;
-    displayText(html);
-  };
-  r.readAsText(file);
-}
-
-/* Show text */
-function displayText(html){
-  const el=document.getElementById('textContent');
-  el.innerHTML=html;
-  enableTextSelection();
-}
-
-/* -------- Highlight + capture -------- */
-function enableTextSelection(){
-  const el=document.getElementById('textContent');
-  el.onmouseup=()=>{
-    const sel=window.getSelection().toString().trim();
-    if(!sel)return;
-    selectedTextContent=sel;
-    document.getElementById('selectedText').textContent='"'+sel+'"';
-    /* simple highlight */
-    const range=window.getSelection().rangeCount?window.getSelection().getRangeAt(0):null;
-    if(range){
-      const span=document.createElement('span'); span.className='highlight';
-      try{range.surroundContents(span);}catch(e){/* overlapping nodes – ignore */ }
+async function renderPage(num) {
+  pageRendering = true;
+  
+  try {
+    const page = await pdfDoc.getPage(num);
+    const canvas = document.getElementById('pdfCanvas');
+    const ctx = canvas.getContext('2d');
+    const viewport = page.getViewport({ scale });
+    
+    canvas.height = viewport.height;
+    canvas.width = viewport.width;
+    
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    
+    pageRendering = false;
+    if (pageNumPending !== null) {
+      renderPage(pageNumPending);
+      pageNumPending = null;
     }
-  };
+    
+    document.getElementById('pageInfo').textContent = `Page ${num} of ${pdfDoc.numPages}`;
+    document.getElementById('pageJump').value = num;
+    pageNum = num;
+    
+    // Sync with text column if enabled
+    if (syncEnabled) {
+      syncTextWithPDF(num);
+    }
+    
+  } catch (e) {
+    err('Failed to render page: ' + e.message);
+    pageRendering = false;
+  }
 }
 
-/* ================= Speech synthesis ================= */
-function loadVoices(){
-  const vs=speechSynthesis.getVoices();
-  const sel=document.getElementById('voiceSelect');
-  sel.innerHTML='<option value="">Default</option>';
-  vs.forEach((v,i)=>{
-    const o=document.createElement('option');o.value=i;o.textContent=`${v.name} (${v.lang})`;
-    sel.appendChild(o);
-  });
-}
-speechSynthesis.onvoiceschanged=loadVoices; loadVoices();
-
-document.getElementById('speedRange').oninput=e=>document.getElementById('speedValue').textContent=e.target.value+'x';
-document.getElementById('pitchRange').oninput=e=>document.getElementById('pitchValue').textContent=e.target.value;
-
-document.getElementById('playBtn').onclick =()=>{const t=selectedTextContent||bookContent; if(t)playText(t)};
-document.getElementById('pauseBtn').onclick=()=>speechSynthesis.pause();
-document.getElementById('stopBtn').onclick =()=>{speechSynthesis.cancel();updateVoiceCtrls(false);};
-
-function playText(t){
-  speechSynthesis.cancel();
-  currentUtterance=new SpeechSynthesisUtterance(t);
-  const vsel=document.getElementById('voiceSelect').value;
-  const vs=speechSynthesis.getVoices();
-  if(vsel)currentUtterance.voice=vs[vsel];
-  currentUtterance.rate=parseFloat(document.getElementById('speedRange').value);
-  currentUtterance.pitch=parseFloat(document.getElementById('pitchRange').value);
-  currentUtterance.onstart=currentUtterance.onresume=()=>updateVoiceCtrls(true);
-  currentUtterance.onend=currentUtterance.onerror =()=>updateVoiceCtrls(false);
-  speechSynthesis.speak(currentUtterance);
-}
-function updateVoiceCtrls(playing){
-  document.getElementById('playBtn').disabled=playing;
-  document.getElementById('pauseBtn').disabled=!playing;
-  document.getElementById('stopBtn').disabled=!playing;
+function queueRenderPage(n) {
+  if (pageRendering) {
+    pageNumPending = n;
+  } else {
+    renderPage(n);
+  }
 }
 
-/* ================= Analysis ================= */
-document.getElementById('analyzeBtn').onclick=()=>{
-  if(!selectedTextContent){err('Please select some text first');return;}
-  const key=document.getElementById('apiKey').value.trim();
-  if(key){
-    currentApiProvider==='huggingface'
-      ? analyzeWithHF(selectedTextContent,key)
-      : analyzeWithOpenAI(selectedTextContent,key);
-  }else analyzeLocally(selectedTextContent);
+function syncTextWithPDF(pdfPageNum) {
+  const textPageIndex = pdfPageNum - 1;
+  if (textPageIndex >= 0 && textPageIndex < textPages.length) {
+    scrollToTextPage(textPageIndex);
+    showSyncIndicator();
+  }
+}
+
+/* Enhanced PDF Navigation */
+document.getElementById('prevPage').onclick = () => {
+  if (pageNum > 1) queueRenderPage(pageNum - 1);
 };
 
-/* ---- local quick stats ---- */
-function analyzeLocally(text){
-  const out=document.getElementById('analysisContent');
-  const words=text.split(' ').filter(w=>w).length;
-  const chars=text.length;
-  const sentences=text.split(/[.!?]+/).filter(s=>s.trim()).length;
-  out.innerHTML=
-  `<div class="success">✅ Local Analysis Complete</div>
-   <div class="analysis-result">
-     <div class="analysis-section-title">📊 Text Statistics</div>
-     <div class="analysis-stats">
-       <div class="stat-item">📝 ${words} words</div>
-       <div class="stat-item">🔤 ${chars} characters</div>
-       <div class="stat-item">📄 ${sentences} sentences</div>
-     </div>
-   </div>
-   <div class="summary-box">
-     <em>💡 Add an API key for AI-powered summarization & Persian translation!</em>
-   </div>`;
+document.getElementById('nextPage').onclick = () => {
+  if (pageNum < pdfDoc.numPages) queueRenderPage(pageNum + 1);
+};
+
+document.getElementById('jumpBtn').onclick = () => {
+  const targetPage = parseInt(document.getElementById('pageJump').value);
+  if (targetPage >= 1 && targetPage <= pdfDoc.numPages) {
+    queueRenderPage(targetPage);
+  } else {
+    err('Invalid page number');
+  }
+};
+
+/* -------- PDF-text extraction (ADDED) -------- */
+async function extractTextFromPDF() {
+  textPages = [];                 // clear previous runs
+  for (let i = 1; i <= pdfDoc.numPages; i++) {
+    const page = await pdfDoc.getPage(i);
+    const { items } = await page.getTextContent();
+    const pageText = items.map(t => t.str).join(' ');
+    textPages.push(pageText);
+  }
+
+  // render first page's text now
+  renderTextPages();
 }
 
-/* ---- Hugging Face summarise + translate ---- */
-async function analyzeWithHF(text,key){
-  const btn=document.getElementById('analyzeBtn');
-  const out=document.getElementById('analysisContent');
-  btn.disabled=true;btn.innerHTML='<span class="loading"></span>Analyzing & Translating…';
-  try{
-    /* summary */
-    const sumRes=await fetch('https://api-inference.huggingface.co/models/facebook/bart-large-cnn',{
-      method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},
-      body:JSON.stringify({inputs:text,parameters:{max_length:120,min_length:40}})
-    });
-    if(!sumRes.ok)throw new Error('Summary API error '+sumRes.status);
-    const sumData=await sumRes.json();
-    const summary=sumData[0]?.summary_text||'No summary';
-    /* translate */
-    btn.innerHTML='<span class="loading"></span>Translating to Persian…';
-    const trRes=await fetch('https://api-inference.huggingface.co/models/Helsinki-NLP/opus-mt-en-fa',{
-      method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},
-      body:JSON.stringify({inputs:summary})
-    });
-    let persian='Translation failed';
-    if(trRes.ok){const trData=await trRes.json();persian=trData[0]?.translation_text||persian;}
-    /* stats */
-    const words=text.split(' ').filter(w=>w).length;
-    const chars=text.length;
-    const sentences=text.split(/[.!?]+/).filter(s=>s.trim()).length;
-    const avg=Math.round(words/sentences);
-    out.innerHTML=
-    `<div class="success">🤗 Hugging Face Analysis Complete</div>
-     <div class="analysis-result">
-       <div class="analysis-section-title">📊 Text Statistics</div>
-       <div class="analysis-stats">
-         <div class="stat-item">📝 ${words} words</div>
-         <div class="stat-item">📄 ${sentences} sentences</div>
-         <div class="stat-item">📈 ${avg} avg words/sentence</div>
-         <div class="stat-item">🔤 ${chars} characters</div>
-       </div>
-     </div>
-     <div class="analysis-result">
-       <div class="analysis-section-title">🔍 AI Summary (English)</div>
-       <div class="summary-box"><strong>Key Points:</strong><br>${summary}</div>
-     </div>
-     <div class="analysis-result">
-       <div class="analysis-section-title">🇮🇷 Persian Translation</div>
-       <div class="persian-text">${persian}</div>
-       <div class="translation-note">* Translated using Helsinki-NLP model</div>
-     </div>`;
-  }catch(e){
-    out.innerHTML=`<div class="error">❌ Analysis Error</div><p>${e.message}</p>`;
-  }finally{
-    btn.disabled=false;btn.textContent='🔍 Analyze Selected Text';
+/* Helper to render text pages in middle column */
+function renderTextPages() {
+  const el = document.getElementById('textContent');
+  if (!el) return;
+  el.innerHTML = '';                         // clear content
+  textPages.forEach((txt, idx) => {
+    const div = document.createElement('div');
+    div.className = 'page';
+    div.dataset.page = idx + 1;
+    div.innerText = txt;
+    if (idx === 0) div.classList.add('current-page');
+    el.appendChild(div);
+  });
+
+  const indicator = document.getElementById('textPageIndicator');
+  if (indicator) indicator.textContent = `Page 1 of ${textPages.length}`;
+}
+
+/* -------- scrollToTextPage (NEW) -------- */
+function scrollToTextPage(textPageIndex) {
+  const textContainer = document.getElementById('textContent');
+  const pageDiv = textContainer.querySelector(`div.page[data-page='${textPageIndex + 1}']`);
+  if (!pageDiv) return;
+
+  // smooth scroll middle column
+  pageDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  // update highlight
+  textContainer.querySelectorAll('div.page').forEach(div => div.classList.remove('current-page'));
+  pageDiv.classList.add('current-page');
+
+  // update mini indicator if present
+  const indicator = document.getElementById('textPageIndicator');
+  if (indicator) {
+    indicator.textContent = `Page ${textPageIndex + 1} of ${textPages.length}`;
   }
 }
 
-/* ---- OpenAI summarise + translate ---- */
-async function analyzeWithOpenAI(text,key){
-  const btn=document.getElementById('analyzeBtn');
-  const out=document.getElementById('analysisContent');
-  btn.disabled=true;btn.innerHTML='<span class="loading"></span>Analyzing with OpenAI…';
-  try{
-    /* summary */
-    const sumRes=await fetch('https://api.openai.com/v1/chat/completions',{
-      method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},
-      body:JSON.stringify({
-        model:'gpt-3.5-turbo',
-        messages:[
-          {role:'system',content:'Provide a concise (2-3 sentence) summary of the user text.'},
-          {role:'user',content:`Please summarise:\n\n${text}`}
-        ],
-        max_tokens:150,temperature:0.3
-      })
-    });
-    if(!sumRes.ok){const d=await sumRes.json();throw new Error(d.error?.message||'OpenAI error')}
-    const sumData=await sumRes.json();
-    const summary=sumData.choices[0].message.content||'No summary';
-    /* translate */
-    btn.innerHTML='<span class="loading"></span>Translating to Persian…';
-    const trRes=await fetch('https://api.openai.com/v1/chat/completions',{
-      method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},
-      body:JSON.stringify({
-        model:'gpt-3.5-turbo',
-        messages:[
-          {role:'system',content:'Translate the text to Persian.'},
-          {role:'user',content:summary}
-        ],
-        max_tokens:200,temperature:0.1
-      })
-    });
-    let persian='Translation failed';
-    if(trRes.ok){const trData=await trRes.json();persian=trData.choices[0].message.content||persian;}
-    /* stats + cost (rough) */
-    const words=text.split(' ').filter(w=>w).length;
-    const sentences=text.split(/[.!?]+/).filter(s=>s.trim()).length;
-    const avg=Math.round(words/sentences);
-    const estTokens=Math.ceil((text.length+summary.length)/4);
-    const estCost=(estTokens*0.000002).toFixed(6);
-    out.innerHTML=
-    `<div class="success">🤖 OpenAI Analysis Complete</div>
-     <div class="analysis-result">
-       <div class="analysis-section-title">📊 Text Statistics</div>
-       <div class="analysis-stats">
-         <div class="stat-item">📝 ${words} words</div>
-         <div class="stat-item">📄 ${sentences} sentences</div>
-         <div class="stat-item">📈 ${avg} avg words/sentence</div>
-         <div class="stat-item">💰 ~${estCost} USD</div>
-       </div>
-     </div>
-     <div class="analysis-result">
-       <div class="analysis-section-title">🔍 AI Summary (English)</div>
-       <div class="summary-box"><strong>AI Analysis:</strong><br>${summary}</div>
-     </div>
-     <div class="analysis-result">
-       <div class="analysis-section-title">🇮🇷 Persian Translation</div>
-       <div class="persian-text">${persian}</div>
-       <div class="translation-note">* Translated using OpenAI GPT-3.5-turbo</div>
-     </div>`;
-  }catch(e){
-    out.innerHTML=`<div class="error">❌ OpenAI Error</div><p>${e.message}</p>`;
-  }finally{
-    btn.disabled=false;btn.textContent='🔍 Analyze Selected Text';
-  }
-}
+/* ---- Auto-scroll when voice play ---- */
+document.addEventListener('DOMContentLoaded', () => {
+  const playBtn = document.getElementById('playBtn');
+  if (!playBtn) return;
+  playBtn.addEventListener('click', () => {
+    try {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed) return;
+
+      let node = selection.anchorNode;
+      if (node.nodeType !== 1) node = node.parentElement;
+      const pageDiv = node.closest('.page');
+      if (!pageDiv) return;
+
+      // Highlight current page
+      document.querySelectorAll('.page.current-page').forEach(el => el.classList.remove('current-page'));
+      pageDiv.classList.add('current-page');
+
+      // Scroll smoothly
+      pageDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      // Update page indicator if present
+      const indicator = document.getElementById('textPageIndicator');
+      if (indicator && indicator.textContent) {
+        indicator.textContent = `Page ${pageDiv.dataset.page} of ${textPages.length}`;
+      }
+    } catch (e) {
+      console.error('Auto-scroll failed: ', e);
+    }
+  });
+});
+
+/* -------- Auto-speak & auto-scroll on text selection -------- */
+(function() {
+  const textPane = document.getElementById('textContent');
+  if (!textPane) return;
+
+  textPane.addEventListener('mouseup', () => {
+    const sel = window.getSelection && window.getSelection();
+    if (!sel) return;
+
+    const selectedText = sel.toString().trim();
+    // Display selected text in the right column
+    const selBox = document.getElementById("selectedText");
+    if (selBox) selBox.textContent = selectedText;
+    selectedTextContent = selectedText;
+    if (!selectedText) return;
+
+    // Scroll selection into view
+    try {
+      const range = sel.getRangeAt(0);
+      const el = range.startContainer.parentNode;
+      if (el && el.scrollIntoView) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+
+      // Highlight the current page
+      const pageEl = el.closest && el.closest('.page');
+      if (pageEl) {
+        document
+          .querySelectorAll('#textContent .page')
+          .forEach(p => p.classList.remove('current-page'));
+        pageEl.classList.add('current-page');
+
+        const pageNum = pageEl.dataset.page || '?';
+        const indicator = document.getElementById('textPageIndicator');
+        if (indicator) {
+          indicator.textContent = `Page ${pageNum} of ${textPages.length || '?'}`;
+        }
+      }
+    } catch(e) {
+      console.warn('Auto-scroll failed:', e);
+    }
+
+    // Speak the selected text
+    try {
+      speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(selectedText);
+      utter.lang = 'en-US';
+      speechSynthesis.speak(utter);
+    } catch(e) {
+      console.warn('Speech failed:', e);
+    }
+  });
+})();
 </script>
 </body>
 </html>
